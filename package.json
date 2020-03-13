@@ -1,0 +1,19 @@
+{
+  "name": "BasicCrudAPI",
+  "version": "1.0.0",
+  "description": "RESTful API with Node.js, Express, and PostgreSQL",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "deploy": " — zip-file fileb://Lambda-CRUD-Deployment.zip",
+    "predeploy": "zip -r Lambda-CRUD-Deployment.zip * -x *.zip *.log"
+  },
+  "keywords": [],
+  "author": "Charlie Normand",
+  "license": "MIT",
+  "dependencies": {
+    "aws-serverless-express": "^3.3.6",
+    "express": "^4.16.4",
+    "pg": "^7.9.0"
+  }
+}
