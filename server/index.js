@@ -1,11 +1,10 @@
 'use strict'
+const express = require('express');
+const bodyParser = require('body-parser');
+const config = require('../config');
+const db = require('./queries');
 
-const express = require('express')
 const app = express()
-
-const bodyParser = require('body-parser')
-
-const db = require('./queries')
 
 app.use(bodyParser.json())
 app.use(
@@ -25,10 +24,10 @@ app.post('/sessions', db.createSession)
 app.put('/sessions/:id', db.updateSession)
 app.delete('/sessions/:id', db.deleteSession)
 
-app.listen(3000, e => e ?
+app.listen(config.PORT, e => e ?
   console.log('Failed to start server', e)
   :
-  console.log('Listening on port 3000.')
+  console.log(`Listening on port ${config.PORT}.`)
 );
 
 module.exports = app

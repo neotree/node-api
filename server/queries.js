@@ -1,10 +1,9 @@
 const { Pool, Client } = require('pg');
+const { DATABASE } = require('../config');
 
-const connectionString = 'postgresql://stage_db_usr:n30Tr33Andr01d!@jsonexports.c6bsc90kw28z.eu-west-2.rds.amazonaws.com:5432/jsonsessions_stage'
+const connectionString = `postgresql://${DATABASE.USERNAME}:${DATABASE.PASSWORD}@${DATABASE.HOST}:${DATABASE.PORT}/${DATABASE.DBNAME}`;
 
-const pool = new Pool({
-  connectionString: connectionString,
-})
+const pool = new Pool({ connectionString });
 
 
 const getLatestUploads = (request, response) => {
