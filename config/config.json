@@ -1,6 +1,5 @@
 {
   "PORT": 3000,
-  "API_KEYS": [],
   "DATABASE": {
     "DBNAME": "<DBNAME>",
     "USERNAME": "<DB USERNAME>",

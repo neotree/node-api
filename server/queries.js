@@ -5,6 +5,18 @@ const connectionString = `postgresql://${DATABASE.USERNAME}:${DATABASE.PASSWORD}
 
 const pool = new Pool({ connectionString });
 
+const getApiKeys = keys => {
+  return new Promise((resolve, reject) => {
+    keys = (keys.map ? keys : [keys]).map(k => `'${k}'`);
+    pool.query(`SELECT key FROM public."api_keys" WHERE key IN (${keys.join(',')})`, (error, results) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(results.rows);
+      }
+    });
+  });
+};
 
 const getLatestUploads = (request, response) => {
   pool.query('SELECT tablet, maxdate FROM public."latest_tablet_uploads"', (error, results) => {
@@ -119,4 +131,5 @@ module.exports = {
   createSession,
   updateSession,
   deleteSession,
+  getApiKeys,
 };

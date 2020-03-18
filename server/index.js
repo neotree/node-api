@@ -11,8 +11,13 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 app.post('*', (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
-  if (!config.API_KEYS.includes(apiKey)) throw new Error('Unauthorised api key');
-  next();
+  db.getApiKeys(apiKey)
+    .then((rows = []) => {
+      rows = rows.map(r => r.key);
+      if (!rows.includes(apiKey)) throw new Error('Unauthorised api key');
+      next();
+    })
+    .catch(e => { throw e; });
 });
 
 app.get('/', (request, response) => {
