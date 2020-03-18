@@ -1,5 +1,12 @@
-try {
-  module.exports = require(process.env.NEOTREE_NODE_API_CONFIG);
-} catch (e) {
-  module.exports = require('./config.json');
-}
+const config = require('./config.json');
+
+module.exports = {
+  ...config,
+  ...(() => {
+    try {
+      return require(process.env.NEOTREE_NODE_API_CONFIG);
+    } catch (e) {
+      return null
+    }
+  })()
+};
