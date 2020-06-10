@@ -8,9 +8,10 @@
   },
   "scripts": {
     "start": "node server/index.js",
-    "start:prod-server": "cross-env NEOTREE_SERVER_TYPE=production&& node server/index.js",
+    "start:prod-server": "cross-env NEOTREE_SERVER_TYPE=production node server/index.js",
     "start:stage-server": "cross-env NEOTREE_SERVER_TYPE=stage node server/index.js",
     "start:dev-server": "cross-env NEOTREE_SERVER_TYPE=development node server/index.js",
+    
     "prod-server": "pm2 --name neotree_nodeapi_production --watch --no-daemon start npm -- run start:prod-server",
     "stage-server": "pm2 --name neotree_nodeapi_stage --watch --no-daemon start npm -- run start:stage-server",
     "dev-server": "pm2 --name neotree_nodeapi_development --watch --no-daemon start npm -- run start:dev-server"
