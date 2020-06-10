@@ -1,5 +1,5 @@
 const { Pool, Client } = require('pg');
-const { DATABASE } = require('../config');
+const { DATABASE } = require('../config/server');
 
 const connectionString = `postgresql://${DATABASE.USERNAME}:${DATABASE.PASSWORD}@${DATABASE.HOST}:${DATABASE.PORT}/${DATABASE.DBNAME}`;
 

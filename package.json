@@ -3,14 +3,23 @@
   "version": "1.0.0",
   "description": "RESTful API with Node.js, Express, and PostgreSQL",
   "main": "index.js",
+  "bin": {
+    "cross-env": "./node_modules/.bin/cross-env"
+  },
   "scripts": {
     "start": "node server/index.js",
-    "server": "pm2 start server/index.js --name neotree_node_api --watch --no-daemon"
+    "start:prod-server": "cross-env NEOTREE_SERVER_TYPE=production&& node server/index.js",
+    "start:stage-server": "cross-env NEOTREE_SERVER_TYPE=stage node server/index.js",
+    "start:dev-server": "cross-env NEOTREE_SERVER_TYPE=development node server/index.js",
+    "prod-server": "pm2 --name neotree_nodeapi_production --watch --no-daemon start npm -- run start:prod-server",
+    "stage-server": "pm2 --name neotree_nodeapi_stage --watch --no-daemon start npm -- run start:stage-server",
+    "dev-server": "pm2 --name neotree_nodeapi_development --watch --no-daemon start npm -- run start:dev-server"
   },
   "keywords": [],
   "author": "Charlie Normand",
   "license": "MIT",
   "dependencies": {
+    "cross-env": "^7.0.2",
     "express": "^4.17.1",
     "pg": "^7.18.2"
   }

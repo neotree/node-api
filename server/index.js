@@ -1,7 +1,7 @@
 'use strict'
 const express = require('express');
 const bodyParser = require('body-parser');
-const config = require('../config');
+const config = require('../config/server');
 const db = require('./queries');
 
 const app = express();
