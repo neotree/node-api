@@ -96,7 +96,7 @@ const createSession = (request, response) => {
   if (inputLength > 200) {
     pool.query('INSERT INTO public.sessions (ingested_at, data, uid, scriptId) VALUES ($1, $2, $3, $4) RETURNING id', [currentDate, request.body, uid, scriptId], (error, results) => {
       if (error) throw error;
-      response.status(201).send(`Session added with ID: ${results.rows[0].id}`);
+      response.status(200).send(`Session added with ID: ${results.rows[0].id}`);
     });
   }  else {
       response.status(201).send(`Session data too small`);
