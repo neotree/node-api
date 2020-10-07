@@ -3,7 +3,14 @@ const { DATABASE } = require('../config/server');
 
 const connectionString = `postgresql://${DATABASE.USERNAME}:${DATABASE.PASSWORD}@${DATABASE.HOST}:${DATABASE.PORT}/${DATABASE.DBNAME}`;
 
-const pool = new Pool({ connectionString });
+const pool = new Pool({ connectionString }, console.log);
+
+const countByUidPrefix = (req, res) => {    
+  pool.query(`SELECT count FROM public.sessions WHERE uid LIKE '${req.query.uid_prefix}%';`, (e, rslts) => {
+    if (e) throw e;
+    res.status(200).json(rslts);
+  });
+};
 
 const getApiKeys = keys => {
   return new Promise((resolve, reject) => {
@@ -132,4 +139,5 @@ module.exports = {
   updateSession,
   deleteSession,
   getApiKeys,
+  countByUidPrefix,
 };
