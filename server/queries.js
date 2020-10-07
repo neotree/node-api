@@ -6,7 +6,7 @@ const connectionString = `postgresql://${DATABASE.USERNAME}:${DATABASE.PASSWORD}
 const pool = new Pool({ connectionString }, console.log);
 
 const countByUidPrefix = (req, res) => {    
-  pool.query(`SELECT count FROM public.sessions WHERE uid LIKE '${req.query.uid_prefix}%';`, (e, rslts) => {
+  pool.query(`SELECT count(*) FROM public.sessions WHERE uid LIKE '${req.query.uid_prefix}%';`, (e, rslts) => {
     if (e) throw e;
     res.status(200).json(rslts);
   });
