@@ -1,5 +1,6 @@
 const { Pool, Client } = require('pg');
 const { DATABASE } = require('../config/server');
+const formatJson = require('./formatJson')
 
 const connectionString = `postgresql://${DATABASE.USERNAME}:${DATABASE.PASSWORD}@${DATABASE.HOST}:${DATABASE.PORT}/${DATABASE.DBNAME}`;
 
@@ -74,9 +75,6 @@ const getSessionByUID = (request, response) => {
   pool.query('SELECT id, ingested_at, data FROM public.sessions WHERE uid = ($1)', [uid], (error, results) => {
     if (error) throw error;
 
-    var jsonString = JSON.stringify(results.rows);
-    var jsonObj = JSON.parse(jsonString);
-
     response.status(200).json(results.rows);
   });
 };
@@ -88,14 +86,16 @@ const createSession = (request, response) => {
   var scriptId = "";
   if (request.query.scriptId) scriptId = request.query.scriptId.replace('"', '').replace('"', '');
 
-  const { ingested_at, data } = request.body;
 
   inputLength = JSON.stringify(request.body).length;
   var currentDate = new Date();
-
+  //Format Json Into Desirable Format
+  const data = formatJson(request.body);
+  console.log("DDDDD---",data)
   if (inputLength > 200) {
-    pool.query('INSERT INTO public.sessions (ingested_at, data, uid, scriptId) VALUES ($1, $2, $3, $4) RETURNING id', [currentDate, request.body, uid, scriptId], (error, results) => {
+    pool.query('INSERT INTO public.sessions (ingested_at, data, uid, scriptId) VALUES ($1, $2, $3, $4) RETURNING id', [currentDate, data, uid, scriptId], (error, results) => {
       if (error) throw error;
+      console.log("DD--ROWS--DDD---",results.rows);
       response.status(200).send(`Session added with ID: ${results.rows[0].id}`);
     });
   }  else {
@@ -105,9 +105,11 @@ const createSession = (request, response) => {
 
 const updateSession = (request, response) => {
   const id = parseInt(request.params.id);
-  const { ingested_at, data } = request.body;
+  const data = formatJson(request.body);
+  console.log("DDDDD---",data)
   var currentDate = new Date();
-  pool.query('UPDATE public.sessions SET ingested_at = $1, data = $2 WHERE id = $3', [currentDate, request.body, id], (error, results) => {
+
+  pool.query('UPDATE public.sessions SET ingested_at = $1, data = $2 WHERE id = $3', [currentDate, data, id], (error, results) => {
       if (error) throw error;
       response.status(200).send(`Sessions modified with ID: ${id}`);
     }
