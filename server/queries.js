@@ -91,11 +91,9 @@ const createSession = (request, response) => {
   var currentDate = new Date();
   //Format Json Into Desirable Format
   const data = formatJson(request.body);
-  console.log("DDDDD---",data)
   if (inputLength > 200) {
     pool.query('INSERT INTO public.sessions (ingested_at, data, uid, scriptId) VALUES ($1, $2, $3, $4) RETURNING id', [currentDate, data, uid, scriptId], (error, results) => {
       if (error) throw error;
-      console.log("DD--ROWS--DDD---",results.rows);
       response.status(200).send(`Session added with ID: ${results.rows[0].id}`);
     });
   }  else {
@@ -106,7 +104,6 @@ const createSession = (request, response) => {
 const updateSession = (request, response) => {
   const id = parseInt(request.params.id);
   const data = formatJson(request.body);
-  console.log("DDDDD---",data)
   var currentDate = new Date();
 
   pool.query('UPDATE public.sessions SET ingested_at = $1, data = $2 WHERE id = $3', [currentDate, data, id], (error, results) => {
