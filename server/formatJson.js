@@ -31,7 +31,7 @@ const formatJson = (data)=>{
             delete formattedEntries[key]
         } 
     })
-    
+ 
     return formattedEntries
     }
     
