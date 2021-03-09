@@ -14,9 +14,9 @@
     "preprod-server": "npm i",
     "prestage-server": "npm i",
     "predev-server": "npm i",
-    "prod-server": "pm2 --name neotree_webeditor_production --watch --no-daemon start npm -- run start:prod-server",
-    "stage-server": "pm2 --name neotree_webeditor_stage --watch --no-daemon start npm -- run start:stage-server",
-    "dev-server": "pm2 --name neotree_webeditor_development --watch --no-daemon start npm -- run start:dev-server"
+    "prod-server": "pm2 --name neotree_nodeapi_production --watch --no-daemon start npm -- run start:prod-server",
+    "stage-server": "pm2 --name neotree_nodeapi_stage --watch --no-daemon start npm -- run start:stage-server",
+    "dev-server": "pm2 --name neotree_nodeapi_development --watch --no-daemon start npm -- run start:dev-server"
   },
   "keywords": [],
   "author": "Charlie Normand",
