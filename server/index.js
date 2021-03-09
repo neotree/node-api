@@ -1,7 +1,6 @@
 'use strict'
 const express = require('express');
 const bodyParser = require('body-parser');
-const config = require('../config/server');
 const db = require('./queries');
 
 const app = express();
@@ -20,9 +19,7 @@ app.post('*', (req, res, next) => {
     .catch(e => { throw e; });
 });
 
-app.get('/', (request, response) => {
-  response.json({ info: 'Node.js, Express, and Postgres API' });
-});
+app.get('/', (request, response) => response.json({ info: 'Node.js, Express, and Postgres API' }));
 app.get('/sessions/count-by-uid-prefix', db.countByUidPrefix);
 app.get('/latestuploads', db.getLatestUploads);
 app.get('/sessionsCount', db.getSessionsCount);
@@ -34,10 +31,10 @@ app.put('/sessions/:id', db.updateSession);
 app.delete('/sessions/:id', db.deleteSession);
 
 
-app.listen(config.PORT, e => e ?
+app.listen(process.env.SERVER_PORT, e => e ?
   console.log('Failed to start server', e)
   :
-  console.log(`Listening on port ${config.PORT}.`)
+  console.log(`Listening on port ${process.env.SERVER_PORT}.`)
 );
 
 module.exports = app;

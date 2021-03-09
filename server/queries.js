@@ -1,9 +1,6 @@
 const { Pool, Client } = require('pg');
-const { DATABASE } = require('../config/server');
 
-const connectionString = `postgresql://${DATABASE.USERNAME}:${DATABASE.PASSWORD}@${DATABASE.HOST}:${DATABASE.PORT}/${DATABASE.DBNAME}`;
-
-const pool = new Pool({ connectionString }, console.log);
+const pool = new Pool();
 
 const countByUidPrefix = (req, res) => {    
   pool.query(`SELECT count(*) FROM public.sessions WHERE uid LIKE '${req.query.uid_prefix}%';`, (e, rslts) => {
@@ -131,6 +128,7 @@ const deleteSession = (request, response) => {
 };
 
 module.exports = {
+  pool,
   getLatestUploads,
   getSessionsCount,
   getSessions,

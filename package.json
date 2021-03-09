@@ -7,21 +7,24 @@
     "cross-env": "./node_modules/.bin/cross-env"
   },
   "scripts": {
-    "start": "node server/index.js",
-    "start:prod-server": "cross-env NEOTREE_SERVER_TYPE=production node server/index.js",
-    "start:stage-server": "cross-env NEOTREE_SERVER_TYPE=stage node server/index.js",
-    "start:dev-server": "cross-env NEOTREE_SERVER_TYPE=development node server/index.js",
-    
-    "prod-server": "pm2 --name neotree_nodeapi_production --watch --no-daemon start npm -- run start:prod-server",
-    "stage-server": "pm2 --name neotree_nodeapi_stage --watch --no-daemon start npm -- run start:stage-server",
-    "dev-server": "pm2 --name neotree_nodeapi_development --watch --no-daemon start npm -- run start:dev-server"
+    "start": "node index.js",
+    "start:prod-server": "cross-env NEOTREE_SERVER_TYPE=production node index.js",
+    "start:stage-server": "cross-env NEOTREE_SERVER_TYPE=stage node index.js",
+    "start:dev-server": "cross-env NEOTREE_SERVER_TYPE=development node index.js",
+    "preprod-server": "npm i",
+    "prestage-server": "npm i",
+    "predev-server": "npm i",
+    "prod-server": "pm2 --name neotree_webeditor_production --watch --no-daemon start npm -- run start:prod-server",
+    "stage-server": "pm2 --name neotree_webeditor_stage --watch --no-daemon start npm -- run start:stage-server",
+    "dev-server": "pm2 --name neotree_webeditor_development --watch --no-daemon start npm -- run start:dev-server"
   },
   "keywords": [],
   "author": "Charlie Normand",
   "license": "MIT",
   "dependencies": {
     "cross-env": "^7.0.2",
+    "dotenv": "^8.2.0",
     "express": "^4.17.1",
-    "pg": "^7.18.2"
+    "pg": "^8.0.3"
   }
 }
