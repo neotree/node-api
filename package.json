@@ -7,7 +7,7 @@
     "cross-env": "./node_modules/.bin/cross-env"
   },
   "scripts": {
-    "start": "node index.js",
+    "start": "nodemon index.js",
     "start:prod-server": "cross-env NEOTREE_SERVER_TYPE=production node index.js",
     "start:stage-server": "cross-env NEOTREE_SERVER_TYPE=stage node index.js",
     "start:dev-server": "cross-env NEOTREE_SERVER_TYPE=development node index.js",
@@ -22,9 +22,15 @@
   "author": "Charlie Normand",
   "license": "MIT",
   "dependencies": {
+    "cors": "^2.8.5",
     "cross-env": "^7.0.2",
     "dotenv": "^8.2.0",
     "express": "^4.17.1",
-    "pg": "^8.0.3"
+    "pg": "^8.0.3",
+    "socket.io": "^2.3.0",
+    "socket.io-client": "^2.3.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.7"
   }
 }
