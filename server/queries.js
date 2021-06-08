@@ -2,14 +2,14 @@ const { Pool, Client } = require('pg');
 
 const pool = new Pool();
 
-const countByUidPrefix = (req, res) => {    
+const countByUidPrefix = () => (req, res) => {
   pool.query(`SELECT count(*) FROM public.sessions WHERE uid LIKE '${req.query.uid_prefix}%';`, (e, rslts) => {
     if (e) throw e;
     res.status(200).send(rslts.rows[0] ? rslts.rows[0].count : 0);
   });
 };
 
-const getApiKeys = keys => {
+const getApiKeys = () => keys => {
   return new Promise((resolve, reject) => {
     keys = (keys.map ? keys : [keys]).map(k => `'${k}'`);
     pool.query(`SELECT key FROM public."api_keys" WHERE key IN (${keys.join(',')})`, (error, results) => {
@@ -22,7 +22,7 @@ const getApiKeys = keys => {
   });
 };
 
-const getLatestUploads = (request, response) => {
+const getLatestUploads = () => (request, response) => {
   pool.query('SELECT tablet, maxdate FROM public."latest_tablet_uploads"', (error, results) => {
     if (error) throw error;
     var jsonString = JSON.stringify(results.rows);
@@ -31,7 +31,7 @@ const getLatestUploads = (request, response) => {
   });
 };
 
-const getSessionsCount = (request, response) => {
+const getSessionsCount = () => (request, response) => {
   pool.query('SELECT count, scripttitle FROM public."ScriptCount"', (error, results) => {
     if (error) throw error;
     var jsonString = JSON.stringify(results.rows);
@@ -40,7 +40,7 @@ const getSessionsCount = (request, response) => {
   });
 };
 
-const getSessions = (request, response) => {
+const getSessions = () => (request, response) => {
   var sort = request.query.sort;
   var queryasc = 'SELECT id, ingested_at, data FROM public.sessions ORDER BY id ASC;';
   var querydesc = 'SELECT id, ingested_at, data FROM public.sessions ORDER BY id DESC;';
@@ -59,7 +59,7 @@ const getSessions = (request, response) => {
   });
 };
 
-const getSessionByTableId = (request, response) => {
+const getSessionByTableId = () => (request, response) => {
   const id = parseInt(request.params.id);
 
   pool.query('SELECT id, ingested_at, data FROM public.sessions WHERE id = $1', [id], (error, results) => {
@@ -72,7 +72,7 @@ const getSessionByTableId = (request, response) => {
   });
 };
 
-const getSessionByUID = (request, response) => {
+const getSessionByUID = () => (request, response) => {
   const uid = request.query.uid
 
   pool.query('SELECT id, ingested_at, data FROM public.sessions WHERE uid = ($1)', [uid], (error, results) => {
@@ -85,7 +85,7 @@ const getSessionByUID = (request, response) => {
   });
 };
 
-const createSession = (request, response) => {
+const createSession = (app, { socket }) => (request, response) => {
   var uid = "";
   if (request.query.uid) uid = request.query.uid.replace('"', '').replace('"', '');
 
@@ -100,6 +100,7 @@ const createSession = (request, response) => {
   if (inputLength > 200) {
     pool.query('INSERT INTO public.sessions (ingested_at, data, uid, scriptId) VALUES ($1, $2, $3, $4) RETURNING id', [currentDate, request.body, uid, scriptId], (error, results) => {
       if (error) throw error;
+      socket.io.emit('sessions_exported', { sessions: results.rows });
       response.status(200).send(`Session added with ID: ${results.rows[0].id}`);
     });
   }  else {
@@ -107,7 +108,7 @@ const createSession = (request, response) => {
   }
 };
 
-const updateSession = (request, response) => {
+const updateSession = () => (request, response) => {
   const id = parseInt(request.params.id);
   const { ingested_at, data } = request.body;
   var currentDate = new Date();
@@ -118,7 +119,7 @@ const updateSession = (request, response) => {
   );
 };
 
-const deleteSession = (request, response) => {
+const deleteSession = () => (request, response) => {
   const id = parseInt(request.params.id);
 
   pool.query('DELETE FROM public.sessions WHERE id = $1', [id], (error, results) => {
@@ -127,15 +128,28 @@ const deleteSession = (request, response) => {
   });
 };
 
-module.exports = {
-  pool,
-  getLatestUploads,
-  getSessionsCount,
-  getSessions,
-  getSessionByTableId,
-  createSession,
-  updateSession,
-  deleteSession,
-  getApiKeys,
-  countByUidPrefix,
+const getLastIngestedSessions = () => (req, res) => {
+  const { last_ingested_at } = req.query;
+
+  const done = (error, rslts) => res.json({ error, sessions: rslts ? rslts.rows : undefined });
+
+  if (last_ingested_at) {
+    pool.query('select * from public.sessions WHERE ingested_at > $1', [new Date(last_ingested_at)], done);
+  } else {
+    pool.query('select * from public.sessions', [], done);
+  }
 };
+
+module.exports = (app, config = {}) => ({
+  pool,
+  getLatestUploads: getLatestUploads(app, config),
+  getSessionsCount: getSessionsCount(app, config),
+  getSessions: getSessions(app, config),
+  getSessionByTableId: getSessionByTableId(app, config),
+  createSession: createSession(app, config),
+  updateSession: updateSession(app, config),
+  deleteSession: deleteSession(app, config),
+  getApiKeys: getApiKeys(app, config),
+  countByUidPrefix: countByUidPrefix(app, config),
+  getLastIngestedSessions: getLastIngestedSessions(app, config),
+});
