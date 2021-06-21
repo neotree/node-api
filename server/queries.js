@@ -131,13 +131,24 @@ const deleteSession = () => (request, response) => {
 const getLastIngestedSessions = () => (req, res) => {
   const { last_ingested_at } = req.query;
 
-  const done = (error, rslts) => res.json({ error, sessions: rslts ? rslts.rows : undefined });
+  const done = (error, rslts) => {
+    res.json({ error, sessions: rslts ? rslts.rows : undefined });
+  };
 
-  if (last_ingested_at) {
-    pool.query('select * from public.sessions WHERE ingested_at > $1', [new Date(last_ingested_at)], done);
-  } else {
-    pool.query('select * from public.sessions', [], done);
-  }
+  pool.query('select max(ingested_at) as max_ingested_at from public.sessions;', [], (e, rslts) => {
+    if (e) return done(e);
+
+    const { rows: [{ max_ingested_at }] } = rslts;
+
+    const lastTwoWeeks = new Date(max_ingested_at);
+    const pastDate = lastTwoWeeks.getDate() - 14;
+    lastTwoWeeks.setDate(pastDate);
+
+    let lastIngestedAt = lastTwoWeeks;
+    if (last_ingested_at && (new Date(last_ingested_at) > lastTwoWeeks)) lastIngestedAt = new Date(last_ingested_at);
+
+    pool.query('select * from public.sessions where ingested_at > $1;', [lastIngestedAt], done);
+  });
 };
 
 module.exports = (app, config = {}) => ({
