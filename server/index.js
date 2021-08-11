@@ -23,6 +23,8 @@ io.on('connection', socket => {
 
 const db = require('./queries')(app, { socket: { io, subscribers } });
 
+app.get('/find-sessions-by-uid', db.findSessionsByUID);
+
 app.post('*', (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
   const done = e => {

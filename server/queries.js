@@ -151,8 +151,21 @@ const getLastIngestedSessions = () => (req, res) => {
   });
 };
 
+const findSessionsByUID = () => (req, res) => {
+  const { uid } = req.query;
+
+  if (!uid) return res.json({ error: 'Missing uid' });
+
+  pool.query(`SELECT * FROM public.sessions where uid='${uid}' order by ingested_at desc;`, [], (err, results) => {
+    res.json(err ? { error: err.message || err.msg || JSON.stringify(error) } : {
+      sessions: results.rows
+    });
+  });
+};
+
 module.exports = (app, config = {}) => ({
   pool,
+  findSessionsByUID: findSessionsByUID(app, config),
   getLatestUploads: getLatestUploads(app, config),
   getSessionsCount: getSessionsCount(app, config),
   getSessions: getSessions(app, config),
