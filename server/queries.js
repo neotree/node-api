@@ -140,14 +140,16 @@ const getLastIngestedSessions = () => (req, res) => {
 
     const { rows: [{ max_ingested_at }] } = rslts;
 
-    const lastTwoWeeks = new Date(max_ingested_at);
-    const pastDate = lastTwoWeeks.getDate() - 14;
-    lastTwoWeeks.setDate(pastDate);
+    if (last_ingested_at && max_ingested_at && 
+      (new Date(last_ingested_at).getTime() === new Date(max_ingested_at).getTime())) {
+      return done(null, { rows: [] });
+    }
 
-    let lastIngestedAt = lastTwoWeeks;
-    if (last_ingested_at && (new Date(last_ingested_at) > lastTwoWeeks)) lastIngestedAt = new Date(last_ingested_at);
+    const twoWeeksFromLast = max_ingested_at ? new Date(max_ingested_at) : new Date();
+    const pastDate = twoWeeksFromLast.getDate() - 14;
+    twoWeeksFromLast.setDate(pastDate);
 
-    pool.query('select * from public.sessions where ingested_at > $1;', [lastIngestedAt], done);
+    pool.query('select * from public.sessions where ingested_at > $1;', [twoWeeksFromLast], done);
   });
 };
 
