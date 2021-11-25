@@ -1,4 +1,4 @@
-# NeoTree NodeJS Api
+# Neotree NodeJS Api
 
 Note that this project is part of the overall [Neotree System](https://github.com/neotree/neotree), an open source technology platform for supporting health care workers provide neonatal care in low resource settings. For more information see the [main repo](https://github.com/neotree/neotree) .
 
