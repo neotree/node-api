@@ -3,6 +3,7 @@ const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
 const socketIO = require('socket.io');
+const { Pool, } = require('pg');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -38,7 +39,10 @@ app.post('*', (req, res, next) => {
     .catch(e => done(e));
 });
 
-app.get('/', (request, response) => response.json({ info: 'Node.js, Express, and Postgres API' }));
+app.get('/', (request, response) => {
+  console.log('Hello...');
+  response.json({ info: 'Node.js, Express, and Postgres API' });
+});
 app.get('/sessions/count-by-uid-prefix', db.countByUidPrefix);
 app.get('/latestuploads', db.getLatestUploads);
 app.get('/sessionsCount', db.getSessionsCount);
@@ -49,6 +53,38 @@ app.post('/sessions', db.createSession);
 app.put('/sessions/:id', db.updateSession);
 app.delete('/sessions/:id', db.deleteSession);
 app.get('/last-ingested-sessions', db.getLastIngestedSessions);
+
+app.post('/save-poll-data', (req, res) => {
+  const dbConfig = {
+    database: process.env.POLL_DATABASE_NAME,
+    user: process.env.POLL_DATABASE_USER,
+    password: process.env.POLL_DATABASE_PASSWORD,
+    port: process.env.POLL_DATABASE_PORT,
+    host: process.env.POLL_DATABASE_HOST,
+  };
+
+  if (!(dbConfig.database && dbConfig.user && dbConfig.password && 
+    dbConfig.port && dbConfig.host)) return res.json({ success: false, error: 'Database not setup' });
+
+  const pool = new Pool(dbConfig);
+
+  var uid = "";
+  if (req.query.uid) uid = req.query.uid.replace('"', '').replace('"', '');
+
+  var scriptId = "";
+  if (req.query.scriptId) scriptId = req.query.scriptId.replace('"', '').replace('"', '');
+
+  var currentDate = new Date();
+
+  pool.query(
+    'INSERT INTO public.sessions (ingested_at, data, uid, scriptId) VALUES ($1, $2, $3, $4) RETURNING id', 
+    [currentDate, req.body, uid, scriptId], 
+    (error, results) => {
+      if (error || !results) return res.json({ success: false, error: error || 'Something went wrong', });
+      res.json({ success: true, id: results.rows[0].id, });
+    }
+  );
+});
 
 
 httpServer.listen(process.env.SERVER_PORT, e => e ?
