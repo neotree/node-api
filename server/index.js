@@ -24,6 +24,31 @@ io.on('connection', socket => {
 
 const db = require('./queries')(app, { socket: { io, subscribers } });
 
+app.get('/update-sessions-key', (req, res) => {
+  function updateKey(count) {
+    db.pool.query('select id from public.sessions where unique_key is null limit 500;', async (e, rslts) => {
+      if (e) return res.json({ success: false, error: e.message || e, });
+      await Promise.all(rslts.rows.map(row => new Promise((resolve, reject) => {
+        const key = `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
+        db.pool.query('UPDATE public.sessions SET unique_key = $1 WHERE id = $2', [key, row.id], (error, results) => {
+          if (error) return reject (error);
+          resolve(results);
+        }
+      );
+      })));
+      db.pool.query('select count(*) from public.sessions where unique_key is null;', (e, rslts) => {
+        if (e) {
+          res.json({ success: false, error: e });
+        } else {
+          if (rslts.rows[0].count) return updateKey(rslts.rows[0].count);
+          res.json({ success: true, rslts });
+        }
+      });
+    });
+  }
+  updateKey();
+});
+
 app.post('*', (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
   const done = e => {
