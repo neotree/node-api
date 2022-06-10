@@ -78,6 +78,7 @@ app.post('/sessions', db.createSession);
 app.put('/sessions/:id', db.updateSession);
 app.delete('/sessions/:id', db.deleteSession);
 app.get('/last-ingested-sessions', db.getLastIngestedSessions);
+app.get('/sessions/find-sessions-by-uid', db.getSessionByUID);
 
 app.post('/save-poll-data', (req, res) => {
   const dbConfig = {

@@ -173,4 +173,5 @@ module.exports = (app, config = {}) => ({
   getApiKeys: getApiKeys(app, config),
   countByUidPrefix: countByUidPrefix(app, config),
   getLastIngestedSessions: getLastIngestedSessions(app, config),
+  getSessionByUID: getSessionByUID(app, config),
 });
