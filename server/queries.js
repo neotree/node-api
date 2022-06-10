@@ -107,7 +107,7 @@ const createSession = (app, { socket }) => (request, response) => {
     if (count) return response.status(201).send(`Session already exported`);
 
     if (inputLength > 200) {
-      pool.query('INSERT INTO public.sessions (ingested_at, data, uid, scriptId) VALUES ($1, $2, $3, $4) RETURNING id', [currentDate, request.body, uid, scriptId], (error, results) => {
+      pool.query('INSERT INTO public.sessions (ingested_at, data, uid, scriptId) VALUES ($1, $2, $3, $4, $5) RETURNING id', [currentDate, request.body, uid, scriptId, unique_key], (error, results) => {
         if (error) throw error;
         socket.io.emit('sessions_exported', { sessions: results.rows });
         response.status(200).send(`Session added with ID: ${results.rows[0].id}`);
