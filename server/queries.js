@@ -72,7 +72,7 @@ const getSessionByTableId = () => (request, response) => {
   });
 };
 
-const getSessionByUID = () => (request, response) => {
+const getSessionsByUID = () => (request, response) => {
   const uid = request.query.uid
 
   pool.query('SELECT id, ingested_at, data FROM public.sessions WHERE uid = ($1)', [uid], (error, results) => {
@@ -173,5 +173,5 @@ module.exports = (app, config = {}) => ({
   getApiKeys: getApiKeys(app, config),
   countByUidPrefix: countByUidPrefix(app, config),
   getLastIngestedSessions: getLastIngestedSessions(app, config),
-  getSessionByUID: getSessionByUID(app, config),
+  getSessionsByUID: getSessionsByUID(app, config),
 });
