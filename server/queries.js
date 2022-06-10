@@ -68,7 +68,7 @@ const getSessionByTableId = () => (request, response) => {
     var jsonString = JSON.stringify(results.rows);
     var jsonObj = JSON.parse(jsonString);
 
-    response.status(200).json(results.rows);
+    response.status(200).json({ sessions: results.rows });
   });
 };
 
