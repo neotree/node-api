@@ -110,7 +110,7 @@ const createSession = (app, { socket }) => (request, response) => {
     if (error) return done(error.message);
 
     const count = results.rows[0].count;
-    // if (count) return done(`Session already exported`);
+    if (count) return done(null, `Session already exported`);
 
     if (inputLength > 200) {
       pool.query('INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', [currentDate, request.body, uid, scriptId, unique_key], (error, results) => {
