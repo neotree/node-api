@@ -86,6 +86,12 @@ const getSessionsByUID = () => (request, response) => {
 };
 
 const createSession = (app, { socket }) => (request, response) => {
+  const done = (e, data) => {
+    console.log(e, data);
+    if (e) return response.status(201).send(e);
+    response.status(200).send(data);
+  };
+
   let unique_key = `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
   if (request.query.unique_key) unique_key = request.query.unique_key;
 
@@ -101,19 +107,19 @@ const createSession = (app, { socket }) => (request, response) => {
   var currentDate = new Date();
 
   pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
-    if (error) return response.status(201).send(error.message);
+    if (error) return done(error.message);
 
     const count = results.rows[0].count;
-    if (count) return response.status(201).send(`Session already exported`);
+    if (count) return done(`Session already exported`);
 
     if (inputLength > 200) {
       pool.query('INSERT INTO public.sessions (ingested_at, data, uid, scriptId) VALUES ($1, $2, $3, $4, $5) RETURNING id', [currentDate, request.body, uid, scriptId, unique_key], (error, results) => {
         if (error) throw error;
         socket.io.emit('sessions_exported', { sessions: results.rows });
-        response.status(200).send(`Session added with ID: ${results.rows[0].id}`);
+        done(null, `Session added with ID: ${results.rows[0].id}`);
       });
     }  else {
-        response.status(201).send(`Session data too small`);
+        done(`Session data too small`);
     }
   });
 };
