@@ -109,9 +109,8 @@ const createSession = (app, { socket }) => (request, response) => {
   pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
     if (error) return done(error.message);
 
-    const count = results.rows[0].count;
-    console.log(`Sessions found ${count} ${typeof count}`)
-    // if (count) return done(null, `Session already exported`);
+    const count = Number(results.rows[0].count);
+    if (count) return done(null, `Session already exported`);
 
     if (inputLength > 200) {
       pool.query('INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', [currentDate, request.body, uid, scriptId, unique_key], (error, results) => {
