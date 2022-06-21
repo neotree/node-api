@@ -95,7 +95,7 @@ app.post('/save-poll-data', (req, res) => {
   const pool = new Pool(dbConfig);
 
   let unique_key = `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
-  if (request.query.unique_key) unique_key = request.query.unique_key;
+  if (req.query.unique_key) unique_key = req.query.unique_key;
 
   var uid = "";
   if (req.query.uid) uid = req.query.uid.replace('"', '').replace('"', '');
