@@ -87,7 +87,6 @@ const getSessionsByUID = () => (request, response) => {
 
 const saveSession = (app, { socket }) => (request, response) => {
   const done = (e, data) => {
-    console.log(e, data);
     if (e) return response.status(201).send(e);
     response.status(200).send(data);
   };
