@@ -112,7 +112,6 @@ const saveSession = (app, { socket }) => (request, response) => {
 
     const count = Number(results.rows[0].count);
     if (count) {
-      // return done(null, `Session already exported`);
       q = 'UPDATE public.sessions SET ingested_at=$1, data=$2, uid=$3, scriptId=$4, unique_key=$5 WHERE unique_key=$5 RETURNING id';
     }
 
