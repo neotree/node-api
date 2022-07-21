@@ -74,7 +74,7 @@ app.get('/sessionsCount', db.getSessionsCount);
 app.get('/sessions/:id', db.getSessionByTableId);
 app.get('/sessions', db.getSessions);
 //app.get('/sessions', db.getSessionByUID);
-app.post('/sessions', db.createSession);
+app.post('/sessions', db.saveSession);
 app.put('/sessions/:id', db.updateSession);
 app.delete('/sessions/:id', db.deleteSession);
 app.get('/last-ingested-sessions', db.getLastIngestedSessions);
