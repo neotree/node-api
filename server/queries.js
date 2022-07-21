@@ -85,7 +85,7 @@ const getSessionsByUID = () => (request, response) => {
   });
 };
 
-const createSession = (app, { socket }) => (request, response) => {
+const saveSession = (app, { socket }) => (request, response) => {
   const done = (e, data) => {
     console.log(e, data);
     if (e) return response.status(201).send(e);
@@ -109,11 +109,16 @@ const createSession = (app, { socket }) => (request, response) => {
   pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
     if (error) return done(error.message);
 
+    let q = 'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id';
+
     const count = Number(results.rows[0].count);
-    if (count) return done(null, `Session already exported`);
+    if (count) {
+      // return done(null, `Session already exported`);
+      q = 'UPDATE public.sessions SET ingested_at=$1, data=$2, uid=$3, scriptId=$4, unique_key=$5 WHERE unique_key=$5 RETURNING id';
+    }
 
     if (inputLength > 200) {
-      pool.query('INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', [currentDate, request.body, uid, scriptId, unique_key], (error, results) => {
+      pool.query(q, [currentDate, request.body, uid, scriptId, unique_key], (error, results) => {
         if (error) throw error;
         socket.io.emit('sessions_exported', { sessions: results.rows });
         done(null, `Session added with ID: ${results.rows[0].id}`);
@@ -173,7 +178,7 @@ module.exports = (app, config = {}) => ({
   getSessionsCount: getSessionsCount(app, config),
   getSessions: getSessions(app, config),
   getSessionByTableId: getSessionByTableId(app, config),
-  createSession: createSession(app, config),
+  saveSession: saveSession(app, config),
   updateSession: updateSession(app, config),
   deleteSession: deleteSession(app, config),
   getApiKeys: getApiKeys(app, config),
