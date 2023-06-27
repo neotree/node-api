@@ -108,15 +108,11 @@ app.post('/save-poll-data', (req, res) => {
   pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
     if (error) return done(error.message);
 
-    let q = 'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id';
-
     const count = Number(results.rows[0].count);
-    if (count) {
-      q = 'UPDATE public.sessions SET ingested_at=$1, data=$2, uid=$3, scriptId=$4, unique_key=$5 WHERE unique_key=$5 RETURNING id';
-    }
+    if (count) return done(null, `Session already exported`);
 
     pool.query(
-      q, 
+      'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', 
       [currentDate, req.body, uid, scriptId, unique_key], 
       (error, results) => {
         if (error || !results) return res.json({ success: false, error: error || 'Something went wrong', });
