@@ -8,7 +8,7 @@ async function dbTransaction(q, data = [], cb) {
 			if (e) {
 				reject(e);
 			} else {
-				resolve(rslts);
+				resolve(rslts ? rslts.rows : []);
 			}
 			if (cb) cb(e, rslts);
 		});
@@ -17,18 +17,30 @@ async function dbTransaction(q, data = [], cb) {
 
 const APP_VERSION = 'web';
 
-async function getAuthenticatedUser() {
-    const rows = await dbTransaction('select * from web_authenticated_user;');
+async function getAuthenticatedUser(device_id) {
+    const rows = await dbTransaction('select * from web_authenticated_user where device_id=$1;', [device_id]);
     const user = rows[0];
     return user?.details ? JSON.parse(user.details) : null;
 }
 
-async function setLocation(params) {
-	const location = { id: 1, ...params, };
-	await dbTransaction(
-		`insert or replace into web_location (${Object.keys(location).join(',')}) values (${Object.keys(location).map(() => '?').join(',')});`,
-		Object.values(location),
-	);
+async function setLocation(device_id, params) {
+	const getLocationRslt = await dbTransaction('select * from web_location where device_id=$1;', [device_id]);
+    const _location = getLocationRslt[0];
+
+	const location = { device_id, ...params, };
+	const cols = Object.keys(location);
+
+	if (_location) {
+		await dbTransaction(
+			`update web_location set (${cols.map((c, i) => `"${c}"=${i+1}`).join(',')}) values (${cols.map((_, i) => `$${i + 1}`).join(',')});`,
+			Object.values(location),
+		);
+	} else {
+		await dbTransaction(
+			`insert or replace into web_location (${Object.keys(location).join(',')}) values (${Object.keys(location).map((_, i) => `$${i + 1}`).join(',')});`,
+			Object.values(location),
+		);
+	}
 }
 
 async function getLocation() {
@@ -36,10 +48,10 @@ async function getLocation() {
     return rows[0];
 } 
 
-const getApplication = () => new Promise<types.Application>((resolve, reject) => {
+const getApplication = (device_id) => new Promise<types.Application>((resolve, reject) => {
     (async () => {
         try {
-            const getApplicationRslt = await dbTransaction('select * from web_application where id=1;');
+            const getApplicationRslt = await dbTransaction('select * from web_application where device_id=$1;', [device_id]);
             const application = getApplicationRslt[0];
             if (application) application.webeditor_info = JSON.parse(application.webeditor_info || '{}');
             resolve(application);
@@ -101,7 +113,7 @@ const saveConfiguration = (device_id, data = {}) => new Promise((resolve, reject
     (async () => {
         try {
 			const getConfigurationRslt = await dbTransaction(`select * from public.web_configuration where device_id=$1;`, [device_id]);
-            const _configuration = getConfigurationRslt ? (getConfigurationRslt.rows || [])[0] : null;
+            const _configuration = (getConfigurationRslt || [])[0];
 
 			if (_configuration) {
 				const res = await dbTransaction(
