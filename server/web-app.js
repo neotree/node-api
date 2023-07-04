@@ -100,22 +100,23 @@ const getConfiguration = (options = {}) => new Promise<types.Configuration>((res
 const saveConfiguration = (device_id, data = {}) => new Promise((resolve, reject) => {
     (async () => {
         try {
-			const getConfigurationRslt = await dbTransaction(`select * from public.web_configuration where device_id='${device_id}';`);
+			const getConfigurationRslt = await dbTransaction(`select * from public.web_configuration where device_id=$1;`, [device_id]);
             const _configuration = getConfigurationRslt[0];
+			resolve(getConfigurationRslt);
 
-			if (_configuration) {
-				const res = await dbTransaction(
-					'update public.web_configuration set data=$1, "updatedAt"=$2 where device_id=$3;',
-					[JSON.stringify(data || {}), new Date().toISOString(), device_id]
-				);
-				resolve(res);
-			} else {
-				const res = await dbTransaction(
-					'insert into public.web_configuration (device_id, data, "createdAt", "updatedAt") values ($1, $2, $3, $4);',
-					[device_id, JSON.stringify(data || {}), new Date().toISOString(), new Date().toISOString()]
-				);
-				resolve(res);
-			}
+			// if (_configuration) {
+			// 	const res = await dbTransaction(
+			// 		'update public.web_configuration set data=$1, "updatedAt"=$2 where device_id=$3;',
+			// 		[JSON.stringify(data || {}), new Date().toISOString(), device_id]
+			// 	);
+			// 	resolve(res);
+			// } else {
+			// 	const res = await dbTransaction(
+			// 		'insert into public.web_configuration (device_id, data, "createdAt", "updatedAt") values ($1, $2, $3, $4);',
+			// 		[device_id, JSON.stringify(data || {}), new Date().toISOString(), new Date().toISOString()]
+			// 	);
+			// 	resolve(res);
+			// }
         } catch (e) { reject(e); }
     })();
 });
