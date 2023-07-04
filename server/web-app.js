@@ -97,12 +97,12 @@ const getConfiguration = (options = {}) => new Promise<types.Configuration>((res
     })();
 });
 
-const saveConfiguration = (data = {}) => new Promise((resolve, reject) => {
+const saveConfiguration = (device_id, data = {}) => new Promise((resolve, reject) => {
     (async () => {
         try {
             const res = await dbTransaction(
-                'insert or replace into web_configuration (id, data, createdAt, updatedAt) values (?, ?, ?, ?);',
-                [1, JSON.stringify(data || {}), new Date().toISOString(), new Date().toISOString()]
+                'insert or replace into web_configuration (device_id, data, createdAt, updatedAt) values (?, ?, ?, ?);',
+                [device_id, JSON.stringify(data || {}), new Date().toISOString(), new Date().toISOString()]
             );
             resolve(res);
         } catch (e) { reject(e); }
@@ -285,13 +285,14 @@ const deleteSessions = (ids = []) => new Promise((resolve, reject) => {
     })();
 });
 
-const saveApplication = (params = {}) => new Promise((resolve, reject) => {
+const saveApplication = (device_id, params = {}) => new Promise((resolve, reject) => {
     (async () => {
         try {
-            const getApplicationRslt = await dbTransaction(`select * from web_application where device_id='${params.device_id}';`);
+            const getApplicationRslt = await dbTransaction(`select * from web_application where device_id='${device_id}';`);
             const _application = getApplicationRslt[0];
 
             let application = {
+				device_id,
                 ..._application,
                 ...params,
                 version: _application.version || APP_VERSION,
@@ -347,12 +348,16 @@ const getScriptsFields = () => new Promise((resolve, reject) => {
 });
 
 function webAppMiddleware(app) {
-	app.post('/web-app/:deviceId/saveConfiguration', (req, res) => {
-		saveApplication({
-			device_id: req.params.deviceId,
-			...req.body,
-		}).then(data => res.json({ data, })).catch(e => res.status(500).json({ error: e.message, }));
+	app.post('/web-app/:deviceId/saveApplication', (req, res) => {
+		saveApplication(req.params.deviceId, req.body)
+			.then(data => res.json({ data, })).catch(e => res.status(500).json({ error: e.message, }));
 	});
+
+	app.post('/web-app/:deviceId/saveConfiguration', (req, res) => {
+		saveConfiguration(req.params.deviceId, req.body)
+			.then(data => res.json({ data, })).catch(e => res.status(500).json({ error: e.message, }));
+	});
+
 	return app;
 }
 
