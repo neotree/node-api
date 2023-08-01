@@ -246,27 +246,27 @@ const countSessions = (options = {}) => new Promise((resolve, reject) => {
     (async () => {
         try {
             const { ..._where } = options || {};
-            const where = Object.keys(_where).map(key => `${key}=${JSON.stringify(_where[key])}`)
+            const where = Object.keys(_where).map((key, i) => `${key}=$${i + 1}`)
                 .join(',');
             let q = 'select count(id) from web_sessions';
             q = where ? `${q} where ${where}` : q;
 
-            const res = await dbTransaction(`${q};`.trim());
+            const res = await dbTransaction(`${q};`.trim(), Object.values(_where));
             resolve(res ? res[0] : 0);
         } catch (e) { reject(e); }
     })();
 });
   
-const getSession = (options = {}) => new Promise((resolve, reject) => {
+const getSession = (_, options = {}) => new Promise((resolve, reject) => {
     (async () => {
         try {
             const { ..._where } = options || {};
-            const where = Object.keys(_where).map(key => `${key}=${JSON.stringify(_where[key])}`)
+            const where = Object.keys(_where).map((key, i) => `${JSON.stringify(key)}=$${i + 1}`)
                 .join(',');
             let q = 'select * from web_sessions';
             q = where ? `${q} where ${where}` : q;
 
-            const res = await dbTransaction(`${q} limit 1;`.trim());
+            const res = await dbTransaction(`${q} limit 1;`.trim(), Object.values(_where));
             resolve(res.map(s => ({ ...s, data: JSON.parse(s.data || '{}') }))[0]);
         } catch (e) { reject(e); }
     })();
@@ -299,7 +299,7 @@ const getSessions = (device_id, options = {}) => new Promise((resolve, reject) =
     })();
 });
 
-const saveSession = (device_id, params = {}) => new Promise((resolve, reject) => {
+const saveSession = (_, params = {}) => new Promise((resolve, reject) => {
     (async () => {
         try {
 			const { id, ...s } = params;
@@ -320,13 +320,13 @@ const saveSession = (device_id, params = {}) => new Promise((resolve, reject) =>
     })();
 });
 
-const deleteSessions = (ids = []) => new Promise((resolve, reject) => {
+const deleteSessions = (_, ids = []) => new Promise((resolve, reject) => {
     (async () => {
         try {
             ids = ids || [];
             if (!ids.map) ids = [ids];
 
-            const res = await dbTransaction(`delete from web_sessions where id in (${ids.join(',')})`);
+            const res = await dbTransaction(`delete from web_sessions where id in (${ids.map((_, i) => `$${i + 1}`).join(',')})`, ids);
             resolve(res);
         } catch (e) { reject(e); }
     })();
