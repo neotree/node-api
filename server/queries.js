@@ -185,7 +185,7 @@ const saveException =() =>(req,res)=>{
     if (e) return res.status(201).send(e);
     res.status(200).send(data);
   };
-  const q= 'INSERT INTO public.neotree_exception (message,device,country,stack,hospital,synced) VALUES ($1, $2, $3, $4, $5,$6) RETURNING id'
+  const q= 'INSERT INTO public.neotree_exception (message,device,country,stack,hospital,sent) VALUES ($1, $2, $3, $4, $5,$6) RETURNING id'
   const {message,device,country,stack,hospital} = req.body
   pool.query(q, [message,device,country,stack,hospital,false], (error, results) => {
     if(error) {
