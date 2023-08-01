@@ -130,7 +130,7 @@ httpServer.listen(process.env.SERVER_PORT, (e) => {
   console.log('Failed to start server', e)
   } else{
     db.createExceptionTable();
-    cron.schedule('0 */2 * * *', () => {
+    cron.schedule('* * * * *', () => {
         db.sendEmails();
       }, {
       scheduled: true,
