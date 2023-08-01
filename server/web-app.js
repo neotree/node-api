@@ -302,7 +302,7 @@ const getSessions = (device_id, options = {}) => new Promise((resolve, reject) =
 const saveSession = (device_id, params = {}) => new Promise((resolve, reject) => {
     (async () => {
         try {
-			const s = { id, ...params, };
+			const { id, ...s } = params;
 			if (id) {
 				const res = await dbTransaction(
 					`update web_sessions set ${Object.keys(s).map((key, i) => `${JSON.stringify(key)}=$${i + 1}`).join(',')} where id=${id} returning *;`,
