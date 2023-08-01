@@ -4,7 +4,7 @@ const pool = new Pool();
 
 async function dbTransaction(q, data = [], cb) {
 	return new Promise((resolve, reject) => {
-		const q = pool.query(q, data, (e, rslts) => {
+		pool.query(q, data, (e, rslts) => {
 			if (e) {
 				reject(e);
 			} else {
