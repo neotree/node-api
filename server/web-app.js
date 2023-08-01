@@ -299,6 +299,27 @@ const getSessions = (device_id, options = {}) => new Promise((resolve, reject) =
     })();
 });
 
+const saveSession = (device_id, params = {}) => new Promise((resolve, reject) => {
+    (async () => {
+        try {
+			const s = { device_id, ...params, };
+			if (s.id) {
+				const res = await dbTransaction(
+					`update web_sessions set (${Object.keys(f).map((key, i) => `${JSON.stringify(key)}=${i + 1}`).join(',')}) where device_id="${device_id}";`,
+					Object.values(s)
+				);
+				resolve(res);
+			} else {
+				const res = await dbTransaction(
+					`insert into web_sessions (${Object.keys(f).join(',')}) values (${Object.keys(f).map((_, i) => `$${i + 1}`).join(',')});`,
+					Object.values(s)
+				);
+				resolve(res);
+			}
+        } catch (e) { reject(e); }
+    })();
+});
+
 const deleteSessions = (ids = []) => new Promise((resolve, reject) => {
     (async () => {
         try {
@@ -368,6 +389,12 @@ function webAppMiddleware(app) {
 
 	app.post('/web-app/:deviceId/deleteSessions', (req, res) => {
 		deleteSessions(req.params.deviceId, req.body)
+			.then(data => res.json({ data, }))
+			.catch(e => res.status(500).json({ error: e.message, }));
+	});
+
+	app.post('/web-app/:deviceId/saveSession', (req, res) => {
+		saveSession(req.params.deviceId, req.body)
 			.then(data => res.json({ data, }))
 			.catch(e => res.status(500).json({ error: e.message, }));
 	});
