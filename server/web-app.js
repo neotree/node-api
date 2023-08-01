@@ -281,11 +281,11 @@ const getSessions = (device_id, options = {}) => new Promise((resolve, reject) =
 
             let order = (_order || [['createdAt', 'DESC']]);
             order = (order.map ? order : [])
-                .map((keyVal) => (!keyVal.map ? '' : `${keyVal[0] || ''} ${keyVal[1] || ''}`).trim())
+                .map((keyVal) => (!keyVal.map ? '' : `${JSON.stringify(keyVal[0] || '')} ${JSON.stringify(keyVal[1] || '')}`).trim())
                 .filter((clause) => clause)
                 .join(',');
 
-            const where = Object.keys(_where).map((key, i) => `${key}=$${i + 1}`)
+            const where = Object.keys(_where).map((key, i) => `${JSON.stringify(key)}=$${i + 1}`)
                 .join(',');
 
             let q = 'select * from web_sessions';
