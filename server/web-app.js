@@ -286,7 +286,7 @@ const getSessions = (device_id, options = {}) => new Promise((resolve, reject) =
                 .join(',');
 
             const where = Object.keys(_where).map((key, i) => `${JSON.stringify(key)}=$${i + 1}`)
-                .join(',');
+                .join('and ');
 
             let q = 'select * from web_sessions';
             q = where ? `${q} where ${where}` : q;
