@@ -285,14 +285,14 @@ const getSessions = (device_id, options = {}) => new Promise((resolve, reject) =
                 .filter((clause) => clause)
                 .join(',');
 
-            const where = Object.keys(_where).map(key => `${key}=${JSON.stringify(_where[key])}`)
+            const where = Object.keys(_where).map((key, i) => `${key}=$${i + 1}}`)
                 .join(',');
 
             let q = 'select * from web_sessions';
             q = where ? `${q} where ${where}` : q;
             q = order ? `${q} order by ${order}` : q;
 
-            const rows = await dbTransaction(`${q};`.trim(), null);
+            const rows = await dbTransaction(`${q};`.trim(), Object.values(_where).map(v => JSON.stringify(v)));
             resolve(rows.map(s => ({ ...s, data: JSON.parse(s.data || '{}') })));
         } catch (e) { reject(e); }
     })();
