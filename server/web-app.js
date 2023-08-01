@@ -272,10 +272,12 @@ const getSession = (options = {}) => new Promise((resolve, reject) => {
     })();
 });
   
-const getSessions = (options = {}) => new Promise((resolve, reject) => {
+const getSessions = (device_id, options = {}) => new Promise((resolve, reject) => {
     (async () => {
         try {
-            const { _order, ..._where } = options || {};
+            let { _order, ..._where } = options || {};
+
+			_where = { ..._where, device_id, };
 
             let order = (_order || [['createdAt', 'DESC']]);
             order = (order.map ? order : [])
@@ -332,53 +334,41 @@ const saveApplication = (device_id, params = {}) => new Promise((resolve, reject
     })();
 });
 
-const getScriptsFields = () => new Promise((resolve, reject) => {
-    (async () => {
-        try {
-            const scripts = await getScripts();
-            const rslts = await Promise.all(scripts.map(script => new Promise((resolve, reject) => {
-                (async () => {
-                    try {
-                        const screens = await getScreens({ script_id: script.script_id });
-                        resolve({
-                            [script.script_id]: screens.map(screen => {
-                                const metadata = { ...screen.data.metadata };
-                                const fields = metadata.fields || [];
-                                return {
-                                    screen_id: screen.screen_id,
-                                    script_id: screen.script_id,
-                                    screen_type: screen.type,
-                                    keys: (() => {
-                                        let keys = [];
-                                        switch (screen.type) {
-                                            case 'form':
-                                                keys = fields.map((f) => f.key);
-                                                break;
-                                            default:
-                                                keys.push(metadata.key);
-                                        }
-                                        return keys.filter((k) => k);
-                                    })(),
-                                };
-                            })
-                        });
-                    } catch (e) { reject(e); }
-                })();
-            })));
-            resolve(rslts.reduce((acc, s) => ({ ...acc, ...s }), {}));
-        } catch (e) { reject(e); }
-    })();
-});
-
 function webAppMiddleware(app) {
 	app.post('/web-app/:deviceId/saveApplication', (req, res) => {
 		saveApplication(req.params.deviceId, req.body)
-			.then(data => res.json({ data, })).catch(e => res.status(500).json({ error: e.message, }));
+			.then(data => res.json({ data, }))
+			.catch(e => res.status(500).json({ error: e.message, }));
 	});
 
 	app.post('/web-app/:deviceId/saveConfiguration', (req, res) => {
 		saveConfiguration(req.params.deviceId, req.body)
-			.then(data => res.json({ data, })).catch(e => res.status(500).json({ error: e.message, }));
+			.then(data => res.json({ data, }))
+			.catch(e => res.status(500).json({ error: e.message, }));
+	});
+
+	app.get('/web-app/:deviceId/countSessions', (req, res) => {
+		countSessions(req.params.deviceId, req.query)
+			.then(data => res.json({ data, }))
+			.catch(e => res.status(500).json({ error: e.message, }));
+	});
+
+	app.get('/web-app/:deviceId/getSession', (req, res) => {
+		getSession(req.params.deviceId, req.query)
+			.then(data => res.json({ data, }))
+			.catch(e => res.status(500).json({ error: e.message, }));
+	});
+
+	app.get('/web-app/:deviceId/getSessions', (req, res) => {
+		getSessions(req.params.deviceId, req.query)
+			.then(data => res.json({ data, }))
+			.catch(e => res.status(500).json({ error: e.message, }));
+	});
+
+	app.post('/web-app/:deviceId/deleteSessions', (req, res) => {
+		deleteSessions(req.params.deviceId, req.body)
+			.then(data => res.json({ data, }))
+			.catch(e => res.status(500).json({ error: e.message, }));
 	});
 
 	return app;
