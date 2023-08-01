@@ -302,14 +302,13 @@ const getSessions = (device_id, options = {}) => new Promise((resolve, reject) =
 const saveSession = (device_id, params = {}) => new Promise((resolve, reject) => {
     (async () => {
         try {
-			const s = { device_id, ...params, };
-			if (s.id) {
-				resolve(`update web_sessions set ${Object.keys(s).map((key, i) => `${JSON.stringify(key)}=$${i + 1}`).join(',')} where device_id='${device_id}' returning *;`);
-				// const res = await dbTransaction(
-				// 	`update web_sessions set ${Object.keys(s).map((key, i) => `${JSON.stringify(key)}=$${i + 1}`).join(',')} where device_id='${device_id}' returning *;`,
-				// 	Object.values(s),
-				// );
-				// resolve(res[0]);
+			const s = { id, ...params, };
+			if (id) {
+				const res = await dbTransaction(
+					`update web_sessions set ${Object.keys(s).map((key, i) => `${JSON.stringify(key)}=$${i + 1}`).join(',')} where id=${id} returning *;`,
+					Object.values(s),
+				);
+				resolve(res[0]);
 			} else {
 				const res = await dbTransaction(
 					`insert into web_sessions (${Object.keys(s).map(key => JSON.stringify(key)).join(',')}) values (${Object.keys(s).map((_, i) => `$${i + 1}`).join(',')}) returning *;`,
