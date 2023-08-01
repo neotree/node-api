@@ -278,6 +278,7 @@ const getSessions = (device_id, options = {}) => new Promise((resolve, reject) =
             let { _order, ..._where } = options || {};
 
 			_where = { ..._where, device_id, };
+			if (_where.exported !== undefined) _where.exported = (_where.exported === 'true') || (_where.exported === '1');
 
             let order = (_order || [['createdAt', 'DESC']]);
             order = (order.map ? order : [])
@@ -292,7 +293,7 @@ const getSessions = (device_id, options = {}) => new Promise((resolve, reject) =
             q = where ? `${q} where ${where}` : q;
             q = order ? `${q} order by ${order}` : q;
 
-            const rows = await dbTransaction(`${q};`.trim(), Object.values(_where).map(v => JSON.stringify(v)));
+            const rows = await dbTransaction(`${q};`.trim(), Object.values(_where));
             resolve(rows.map(s => ({ ...s, data: JSON.parse(s.data || '{}') })));
         } catch (e) { reject(e); }
     })();
