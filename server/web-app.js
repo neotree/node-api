@@ -304,23 +304,17 @@ const saveSession = (device_id, params = {}) => new Promise((resolve, reject) =>
         try {
 			const s = { device_id, ...params, };
 			if (s.id) {
-				await dbTransaction(
+				const res = await dbTransaction(
 					`update web_sessions set (${Object.keys(s).map((key, i) => `${JSON.stringify(key)}=${i + 1}`).join(',')}) where device_id="${device_id}";`,
 					Object.values(s),
-					(e, res) => {
-						if (e) return reject(e);
-						resolve(res);
-					}
 				);
+				resolve(res[0]);
 			} else {
-				await dbTransaction(
+				const res = await dbTransaction(
 					`insert into web_sessions (${Object.keys(s).map(key => JSON.stringify(key)).join(',')}) values (${Object.keys(s).map((_, i) => `$${i + 1}`).join(',')}) returning *;`,
 					Object.values(s),
-					(e, res) => {
-						if (e) return reject(e);
-						resolve(res);
-					}
 				);
+				resolve(res[0]);
 			}
         } catch (e) { reject(e); }
     })();
