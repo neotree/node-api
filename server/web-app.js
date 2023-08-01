@@ -311,7 +311,7 @@ const saveSession = (device_id, params = {}) => new Promise((resolve, reject) =>
 				resolve(res);
 			} else {
 				const res = await dbTransaction(
-					`insert into web_sessions (${Object.keys(s).join(',')}) values (${Object.keys(f).map((_, i) => `$${i + 1}`).join(',')});`,
+					`insert into web_sessions (${Object.keys(s).join(',')}) values (${Object.keys(s).map((_, i) => `$${i + 1}`).join(',')});`,
 					Object.values(s)
 				);
 				resolve(res);
