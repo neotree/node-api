@@ -1,4 +1,5 @@
 const { Pool, Client } = require('pg');
+const sendEmail = require('./mailer');
 
 const pool = new Pool();
 
@@ -138,6 +139,14 @@ const updateSession = () => (request, response) => {
     }
   );
 };
+const updateException = (id) => {
+  const itemId = parseInt(id);
+
+  pool.query('UPDATE public.neotree_exception SET sent = true,id = $1', [itemId], (error, results) => {
+      if (error) throw error;
+    }
+  );
+};
 
 const deleteSession = () => (request, response) => {
   const id = parseInt(request.params.id);
@@ -171,6 +180,54 @@ const getLastIngestedSessions = () => (req, res) => {
   });
 };
 
+const saveException =() =>(req,res)=>{
+  const done = (e, data) => {
+    if (e) return res.status(201).send(e);
+    res.status(200).send(data);
+  };
+  const q= 'INSERT INTO public.neotree_exception (message,device,country,stack,hospital,synced) VALUES ($1, $2, $3, $4, $5,$6) RETURNING id'
+  const {message,device,country,stack,hospital} = req.body
+  pool.query(q, [message,device,country,stack,hospital,false], (error, results) => {
+    if(error) {
+      throw error
+    } else done(null, `Exception: ${results.rows[0].id}`);
+  })
+}
+const getExceptions = ()  => {
+
+  pool.query('SELECT id, country, message,stack FROM public.neotree_exception WHERE sent is false', (error, results) => {
+    if (error) throw error;
+    var jsonString = JSON.stringify(results.rows);
+    return JSON.parse(jsonString);
+  });
+};
+
+
+const createExceptionTable =() =>{
+  pool.query(`CREATE TABLE IF NOT EXISTS public.neotree_exception (
+    id SERIAL PRIMARY KEY,
+    message VARCHAR NOT NULL,
+    device VARCHAR NOT NULL,
+    country VARCHAR NOT NULL,
+    stack VARCHAR NOT NULL,
+    hospital VARCHAR,
+    sent BOOLEAN
+  )`)
+}
+const sendEmails =() =>{
+  let messages=  getExceptions()
+  if(Array.isArray(messages)){
+for(msg of messages){      
+   sendEmail(msg).then(res=>{
+    if(res.success){
+      updateException(msg.id);
+    }
+   });
+   }
+  }
+}
+
+
 module.exports = (app, config = {}) => ({
   pool,
   getLatestUploads: getLatestUploads(app, config),
@@ -184,4 +241,9 @@ module.exports = (app, config = {}) => ({
   countByUidPrefix: countByUidPrefix(app, config),
   getLastIngestedSessions: getLastIngestedSessions(app, config),
   getSessionsByUID: getSessionsByUID(app, config),
+  createExceptionTable,
+  saveException: saveException(app,config),
+  getExceptions,
+  updateException,
+  sendEmails
 });

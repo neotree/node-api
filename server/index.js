@@ -4,6 +4,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const socketIO = require('socket.io');
 const { Pool, } = require('pg');
+var cron = require('node-cron');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -21,8 +22,8 @@ io.on('connection', socket => {
 
     socket.emit('connected', { socketId: socket.id });
 });
+const db = require('./queries')(app, { socket: { io, subscribers } })
 
-const db = require('./queries')(app, { socket: { io, subscribers } });
 
 app.get('/update-sessions-key', (req, res) => {
   function updateKey(count) {
@@ -79,6 +80,7 @@ app.put('/sessions/:id', db.updateSession);
 app.delete('/sessions/:id', db.deleteSession);
 app.get('/last-ingested-sessions', db.getLastIngestedSessions);
 app.get('/find-sessions-by-uid', db.getSessionsByUID);
+app.post('/exceptions', db.saveException);
 
 app.post('/save-poll-data', (req, res) => {
   const dbConfig = {
@@ -123,10 +125,23 @@ app.post('/save-poll-data', (req, res) => {
 });
 
 
-httpServer.listen(process.env.SERVER_PORT, e => e ?
+httpServer.listen(process.env.SERVER_PORT, (e) => {
+  if(e){
   console.log('Failed to start server', e)
-  :
+  } else{
+    db.createExceptionTable();
+    cron.schedule('0 */2 * * *', () => {
+        db.sendEmails();
+      }, {
+      scheduled: true,
+      timezone: "Africa/Harare"
+    });
   console.log(`Listening on port ${process.env.SERVER_PORT}.`)
+  }
+
+
+}
+  
 );
 
 module.exports = app;
