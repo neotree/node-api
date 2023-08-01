@@ -1,4 +1,5 @@
 const HTML_TEMPLATE = (message) => {
+  let country = message.country=='zw'?"ZIMBABWE":"MALAWI"
     return `
       <!DOCTYPE html>
       <html>
@@ -19,7 +20,7 @@ const HTML_TEMPLATE = (message) => {
               padding: 20px;
             }
             .email-header {
-              background-color: #333;
+              background-color: #1a313d;
               color: #fff;
               padding: 20px;
               text-align: center;
@@ -28,7 +29,7 @@ const HTML_TEMPLATE = (message) => {
               padding: 20px;
             }
             .email-footer {
-              background-color: #333;
+              background-color: #1a313d;
               color: #fff;
               padding: 20px;
               text-align: center;
@@ -42,12 +43,12 @@ const HTML_TEMPLATE = (message) => {
                 <h1>NEOTREE MOBILE APP EXCEPTION</h1>
               </div>
               <div class="email-body">
-                <p><b>COUNTRY</b>: ${message.country}</p><br/><br/>
+                <p><b>COUNTRY</b>: ${country}</p><br/><br/>
                 <p><b>MESSAGE</b>: ${message.message}</p><br/></br>
-                <p><b>STACK TRACE</b> ${message.stack}</p>
+                <p><b>STACK TRACE:</b> ${message.stack}</p>
               </div>
               <div class="email-footer">
-                <p>© 2021 Neotree - All Rights Reserved. Charity no. 1186748, Registered office address: The Broadgate Tower, Third Floor, 20 Primrose Street, London EC2A 2RS | Designed by Creative Clinic | Privacy Policy</p>
+                <p>© 2021 Neotree - All Rights Reserved. Charity no. 1186748, Registered office address: The Broadgate Tower, Third Floor, 20 Primrose Street, London EC2A 2RS | Designed by Creative Clinic</p>
               </div>
             </div>
           </div>

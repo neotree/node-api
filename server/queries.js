@@ -123,8 +123,8 @@ const saveSession = (app, { socket }) => (request, response) => {
         socket.io.emit('sessions_exported', { sessions: results.rows });
         done(null, `Session added with ID: ${results.rows[0].id}`);
       });
-    }  else {
-        done(`Session data too small`);
+    } else {
+      done(`Session data too small`);
     }
   });
 };
@@ -134,17 +134,17 @@ const updateSession = () => (request, response) => {
   const { ingested_at, data } = request.body;
   var currentDate = new Date();
   pool.query('UPDATE public.sessions SET ingested_at = $1, data = $2 WHERE id = $3', [currentDate, request.body, id], (error, results) => {
-      if (error) throw error;
-      response.status(200).send(`Sessions modified with ID: ${id}`);
-    }
+    if (error) throw error;
+    response.status(200).send(`Sessions modified with ID: ${id}`);
+  }
   );
 };
 const updateException = (id) => {
   const itemId = parseInt(id);
 
-  pool.query('UPDATE public.neotree_exception SET sent = true,id = $1', [itemId], (error, results) => {
-      if (error) throw error;
-    }
+  pool.query('UPDATE public.neotree_exception SET sent = true where id = $1', [itemId], (error, results) => {
+    if (error) throw error;
+  }
   );
 };
 
@@ -180,30 +180,30 @@ const getLastIngestedSessions = () => (req, res) => {
   });
 };
 
-const saveException =() =>(req,res)=>{
+const saveException = () => (req, res) => {
   const done = (e, data) => {
     if (e) return res.status(201).send(e);
     res.status(200).send(data);
   };
-  const q= 'INSERT INTO public.neotree_exception (message,device,country,stack,hospital,sent) VALUES ($1, $2, $3, $4, $5,$6) RETURNING id'
-  const {message,device,country,stack,hospital} = req.body
-  pool.query(q, [message,device,country,stack,hospital,false], (error, results) => {
-    if(error) {
+  const q = 'INSERT INTO public.neotree_exception (message,device,country,stack,hospital,sent) VALUES ($1, $2, $3, $4, $5,$6) RETURNING id'
+  const { message, device, country, stack, hospital } = req.body
+  pool.query(q, [message, device, country, stack, hospital, false], (error, results) => {
+    if (error) {
       throw error
     } else done(null, `Exception: ${results.rows[0].id}`);
   })
 }
-const getExceptions = ()  => {
+const getExceptions = (callback) => {
 
   pool.query('SELECT id, country, message,stack FROM public.neotree_exception WHERE sent is false', (error, results) => {
-    if (error) throw error;
-    var jsonString = JSON.stringify(results.rows);
-    return JSON.parse(jsonString);
+    if (error) callback(error, null)
+    const jsonObject =  JSON.stringify(results.rows)
+    callback(null,JSON.parse(jsonObject));
   });
 };
 
 
-const createExceptionTable =() =>{
+const createExceptionTable = () => {
   pool.query(`CREATE TABLE IF NOT EXISTS public.neotree_exception (
     id SERIAL PRIMARY KEY,
     message VARCHAR NOT NULL,
@@ -214,17 +214,19 @@ const createExceptionTable =() =>{
     sent BOOLEAN
   )`)
 }
-const sendEmails =() =>{
-  let messages=  getExceptions()
-  if(Array.isArray(messages)){
-for(msg of messages){      
-   sendEmail(msg).then(res=>{
-    if(res.success){
-      updateException(msg.id);
+const sendEmails = () => {
+  getExceptions((err, results) => {
+    if (err) throw err
+    if (Array.isArray(results)) {
+      for (msg of results) {
+        sendEmail(msg,(e,res)=>{
+          if (e) throw e
+          //DO NOTHING
+          updateException(msg.id);
+        })
+      }
     }
-   });
-   }
-  }
+  })
 }
 
 
@@ -242,8 +244,6 @@ module.exports = (app, config = {}) => ({
   getLastIngestedSessions: getLastIngestedSessions(app, config),
   getSessionsByUID: getSessionsByUID(app, config),
   createExceptionTable,
-  saveException: saveException(app,config),
-  getExceptions,
-  updateException,
+  saveException: saveException(app, config),
   sendEmails
 });
