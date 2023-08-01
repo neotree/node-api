@@ -4,7 +4,7 @@ const pool = new Pool();
 
 async function dbTransaction(q, data = [], cb) {
 	return new Promise((resolve, reject) => {
-		pool.query(q, data, (e, rslts) => {
+		const q = pool.query(q, data, (e, rslts) => {
 			if (e) {
 				reject(e);
 			} else {
@@ -314,7 +314,7 @@ const saveSession = (device_id, params = {}) => new Promise((resolve, reject) =>
 				);
 			} else {
 				await dbTransaction(
-					`insert into web_sessions (${Object.keys(s).map(key => JSON.stringify(key)).join(',')}) values (${Object.keys(s).map((_, i) => `$${i + 1}`).join(',')});`,
+					`insert into web_sessions (${Object.keys(s).map(key => JSON.stringify(key)).join(',')}) values (${Object.keys(s).map((_, i) => `$${i + 1}`).join(',')}) returning *;`,
 					Object.values(s),
 					(e, res) => {
 						if (e) return reject(e);
