@@ -305,7 +305,7 @@ const saveSession = (device_id, params = {}) => new Promise((resolve, reject) =>
 			const s = { device_id, ...params, };
 			if (s.id) {
 				const res = await dbTransaction(
-					`update web_sessions set (${Object.keys(s).map((key, i) => `${JSON.stringify(key)}=${i + 1}`).join(',')}) where device_id="${device_id}";`,
+					`update web_sessions set (${Object.keys(s).map((key, i) => `${JSON.stringify(key)}=$${i + 1}`).join(',')}) where device_id="${device_id} returning *";`,
 					Object.values(s),
 				);
 				resolve(res[0]);
