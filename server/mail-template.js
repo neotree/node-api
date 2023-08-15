@@ -43,9 +43,13 @@ const HTML_TEMPLATE = (message) => {
                 <h1>NEOTREE MOBILE APP EXCEPTION</h1>
               </div>
               <div class="email-body">
-                <p><b>COUNTRY</b>: ${country}</p><br/><br/>
-                <p><b>MESSAGE</b>: ${message.message}</p><br/></br>
+                <p><b>COUNTRY</b>: ${country}</p>
+                <p><b>APP VERSION</b>: ${message.version}</p>
+                <p><b>MESSAGE</b>: ${message.message}</p>
                 <p><b>STACK TRACE:</b> ${message.stack}</p>
+                <p><b>DEVICE DETAILS:</b> ${message.device_model}</p>
+                <p><b>AVAILABLE MEMORY:</b> ${message.memory}</p>
+                <p><b>BATTERY LEVEL:</b> ${message.battery}</p>
               </div>
               <div class="email-footer">
                 <p>© 2021 Neotree - All Rights Reserved. Charity no. 1186748, Registered office address: The Broadgate Tower, Third Floor, 20 Primrose Street, London EC2A 2RS | Designed by Creative Clinic</p>
