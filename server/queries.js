@@ -185,10 +185,10 @@ const saveException = () => (req, res) => {
     if (e) return res.status(201).send(e);
     res.status(200).send(data);
   };
-  const q = `INSERT INTO public.neotree_exception (message,device,country,stack,hospital,sent,version,battery,device_model,memory) 
-  VALUES ($1, $2, $3, $4, $5,$6,$7,$8,$9,$10) RETURNING id`
-  const { message, device, country, stack, hospital,version,battery,device_model,memory } = req.body
-  pool.query(q, [message, device, country, stack, hospital, false,version,battery,device_model,memory], (error, results) => {
+  const q = `INSERT INTO public.neotree_exception (message,device,country,stack,hospital,sent,version,battery,device_model,memory,editor_version) 
+  VALUES ($1, $2, $3, $4, $5,$6,$7,$8,$9,$10,$11) RETURNING id`
+  const { message, device, country, stack, hospital,version,battery,device_model,memory,editor_version } = req.body
+  pool.query(q, [message, device, country, stack, hospital, false,version,battery,device_model,memory,editor_version], (error, results) => {
     if (error) {
       throw error
     } else done(null, `Exception: ${results.rows[0].id}`);
@@ -196,7 +196,7 @@ const saveException = () => (req, res) => {
 }
 const getExceptions = (callback) => {
 
-  pool.query('SELECT id, country, message,stack,version,battery,device_model,memory FROM public.neotree_exception WHERE sent is false', (error, results) => {
+  pool.query('SELECT id, country, message,stack,version,battery,device_model,memory,editor_version FROM public.neotree_exception WHERE sent is false', (error, results) => {
     if (error) callback(error, null)
     const jsonObject =  JSON.stringify(results.rows)
     callback(null,JSON.parse(jsonObject));
