@@ -216,7 +216,8 @@ const createExceptionTable = () => {
     version VARCHAR,
     battery VARCHAR,
     device_model VARCHAR,
-    memory VARCHAR
+    memory VARCHAR,
+    editor_version VARCHAR
   )`)
 }
 const sendEmails = () => {
