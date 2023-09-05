@@ -5,8 +5,9 @@ const bodyParser = require('body-parser');
 const socketIO = require('socket.io');
 const { Pool, } = require('pg');
 var cron = require('node-cron');
+const { webAppMiddleware } = require('./web-app');
 
-const app = express();
+let app = express();
 const httpServer = http.createServer(app);
 const io = socketIO(httpServer);
 
@@ -124,6 +125,7 @@ app.post('/save-poll-data', (req, res) => {
   });
 });
 
+app = webAppMiddleware(app);
 
 httpServer.listen(process.env.SERVER_PORT, (e) => {
   if(e){
