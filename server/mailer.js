@@ -1,15 +1,16 @@
 const nodemailer = require('nodemailer');
 const  HTML_TEMPLATE = require("./mail-template.js");
+
 const config = {
-    emailFrom: process.env.MAIL_USER,
+    emailFrom: process.env.MAIL_FROM_ADDRESS,
     emailsTo: process.env.MAIL_RECEIVERS,
-    emailPassword: process.env.MAIL_PW,
-  };
+    emailPassword: process.env.MAIL_PASSWORD,
+};
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  host: 'smtp.gmail.com',
-  port: 465,
+  service: process.env.MAIL_MAILER,
+  host: process.env.MAIL_HOST,
+  port: process.env.MAIL_PORT,
   secure: true,
   auth: {
     user: config.emailFrom,
@@ -22,14 +23,14 @@ const mailOptions = {
   to: config.emailsTo,
   subject: 'NEOTREE MOBILE APP EXCEPTION',
 };
-module.exports = function sendEmail(message,callback){
-if(message){
-transporter.sendMail({...mailOptions,html: HTML_TEMPLATE(message)}, function(error, info){
-  if (error) {
-    callback(error,null);
-  } else {
-   callback(null,{success: true})
-  }
-});
-}
+module.exports = function sendEmail(message,callback) {
+	if(message){
+		transporter.sendMail({ ...mailOptions, html: HTML_TEMPLATE(message) }, function(error, info){
+			if (error) {
+				callback(error,null);
+			} else {
+				callback(null,{success: true})
+			}
+		});
+	}
 }
