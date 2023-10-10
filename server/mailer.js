@@ -12,8 +12,6 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-console.log('transporter', transporter);
-
 const mailOptions = {
   from: process.env.MAIL_FROM_ADDRESS,
   to: process.env.MAIL_RECEIVERS,
@@ -24,7 +22,7 @@ module.exports = function sendEmail(message,callback) {
 	console.log('sendEmail message = ', message);
 	if(message){
 		transporter.sendMail({ ...mailOptions, html: HTML_TEMPLATE(message) }, function(error, info){
-			console.log('sendEmail', error, info);
+			console.log('transporter.sendMail', error, info);
 			if (error) {
 				callback(error,null);
 			} else {
