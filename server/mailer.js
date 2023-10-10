@@ -26,6 +26,7 @@ const mailOptions = {
 module.exports = function sendEmail(message,callback) {
 	if(message){
 		transporter.sendMail({ ...mailOptions, html: HTML_TEMPLATE(message) }, function(error, info){
+			console.log('sendEmail', error, info);
 			if (error) {
 				callback(error,null);
 			} else {
