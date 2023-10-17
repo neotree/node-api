@@ -5,11 +5,14 @@ const transporter = nodemailer.createTransport({
   service: process.env.MAIL_MAILER,
   host: process.env.MAIL_HOST,
   port: process.env.MAIL_PORT,
-  secure: true,
+  secure: false,
   auth: {
     user: process.env.MAIL_USERNAME,
     pass: process.env.MAIL_PASSWORD
-  }
+  },
+   tls: {
+        rejectUnauthorized: false
+    }
 });
 
 const mailOptions = {
@@ -19,15 +22,15 @@ const mailOptions = {
 };
 
 module.exports = function sendEmail(message,callback) {
-	console.log('sendEmail message = ', message);
-	if(message){
-		transporter.sendMail({ ...mailOptions, html: HTML_TEMPLATE(message) }, function(error, info){
-			console.log('transporter.sendMail', error, info);
-			if (error) {
-				callback(error,null);
-			} else {
-				callback(null,{success: true})
-			}
-		});
-	}
+        console.log('sendEmail message = ', message);
+        if(message){
+                transporter.sendMail({ ...mailOptions, html: HTML_TEMPLATE(message) }, function(error, info){
+                        console.log('transporter.sendMail', error, info);
+                        if (error) {
+                                callback(error,null);
+                        } else {
+                                callback(null,{success: true})
+                        }
+                });
+        }
 }
