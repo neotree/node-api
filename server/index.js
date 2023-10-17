@@ -66,10 +66,41 @@ app.post('*', (req, res, next) => {
     .catch(e => done(e));
 });
 
-app.get('/', (request, response) => {
+app.get('/', (_, response) => {
   console.log('Hello...');
   response.json({ info: 'Node.js, Express, and Postgres API' });
 });
+
+app.get('/test-mail', (_, res) => {
+	const nodemailer = require('nodemailer');
+	const transporter = nodemailer.createTransport({
+		service: process.env.MAIL_MAILER,
+		host: process.env.MAIL_HOST,
+		port: process.env.MAIL_PORT,
+		secure: true,
+		auth: {
+			user: process.env.MAIL_USERNAME,
+			pass: process.env.MAIL_PASSWORD
+		}
+	});
+	const mailOptions = {
+		from: process.env.MAIL_FROM_ADDRESS,
+		to: process.env.MAIL_RECEIVERS,
+		subject: 'NEOTREE Test mail',
+	};
+	transporter.sendMail({ ...mailOptions, html: '<h1>Test mail</h1>' }, function(error, info){
+		console.log({
+			error,
+			info,
+		});
+		res.json({
+			error,
+			success: error ? false : true,
+			info,
+		});
+	});
+});
+
 app.get('/sessions/count-by-uid-prefix', db.countByUidPrefix);
 app.get('/latestuploads', db.getLatestUploads);
 app.get('/sessionsCount', db.getSessionsCount);
