@@ -67,7 +67,6 @@ app.post('*', (req, res, next) => {
 });
 
 app.get('/', (_, response) => {
-  console.log('Hello...');
   response.json({ info: 'Node.js, Express, and Postgres API' });
 });
 
