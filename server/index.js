@@ -113,6 +113,7 @@ app.get('/last-ingested-sessions', db.getLastIngestedSessions);
 app.get('/find-sessions-by-uid', db.getSessionsByUID);
 app.post('/exceptions', db.saveException);
 app.post('/remove-confidential-data', db.removeConfidentialData);
+app.get('/remove-confidential-data', db._removeConfidentialData);
 
 app.post('/save-poll-data', (req, res) => {
   const dbConfig = {

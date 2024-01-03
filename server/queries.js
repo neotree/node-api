@@ -3,9 +3,62 @@ const sendEmail = require('./mailer');
 
 const pool = new Pool();
 
+const _removeConfidentialData = () => (req, res) => {
+	const keys = [
+		"MotherFirstName",
+		"MotherSurname",
+		"MothersCell",
+		"MothFirstNameDC",
+		"MothSurnameDC",
+		"Ethnicity2",
+		"HospNu",
+		"MoFirstNameBC",
+		"MoSurNameBC",
+		"DOBTOB",
+		"BirthDateDis",
+		"Toes",
+		"MothInitials",
+		"MotherDOB",
+		"BabyFirstName",
+		"BabySurname",
+		"BabyFirst",
+		"BabyLast"
+	];
+	console.log('loading sessions...');
+	pool.query("select id, data from sessions order by ingested_at desc;", (error, results) => {
+		if (error) return res.json({ error });
+	
+		const data = results.rows.map(item => {
+			const data = item.data;
+			const conf = Object.keys(data.entries).filter(key => keys.includes(key));
+			keys.forEach(key => {
+				delete data.entries[key];
+			});
+			return {
+				id: item.id,
+				data: JSON.stringify(data),
+				conf,
+			}
+		}).filter(item => item.conf.length);
+	
+		console.log(data.length + ' sessions');
+		
+		if (data.length) {
+			data.forEach((item, i) => {
+				console.log('updating session ID: ' + item.id);
+				pool.query('UPDATE public.sessions SET data = $1 WHERE id = $2', [item.data, item.id], (error, rslts) => {
+					if (i === (data.length - 1)) console.log({ success: true });
+				});
+			});
+		} else {
+			console.log({ success: true });
+		}
+	});
+};
+
 const removeConfidentialData = () => (req, res) => {
 	const keys = req.body.keys || [];
-	pool.query("select id, data from sessions order by ingested_at desc limit 1;", (error, results) => {
+	pool.query("select id, data from sessions order by ingested_at desc;", (error, results) => {
 		if (error) return res.json({ error });
 
 		const data = results.rows.map(item => {
@@ -22,8 +75,8 @@ const removeConfidentialData = () => (req, res) => {
 		}).filter(item => item.conf.length);
 		
 		if (data.length) {
-			data.forEach(({ id, data }, i) => {
-				pool.query('UPDATE public.sessions SET data = $1 WHERE id = $2', [data, id], () => {
+			data.forEach((item, i) => {
+				pool.query('UPDATE public.sessions SET data = $1 WHERE id = $2', [item.data, item.id], () => {
 					if (i === (data.length - 1)) res.json({ success: true });
 				});
 			});
@@ -282,5 +335,6 @@ module.exports = (app, config = {}) => ({
   createExceptionTable,
   saveException: saveException(app, config),
   removeConfidentialData: removeConfidentialData(app, config),
+  _removeConfidentialData: _removeConfidentialData(app, config),
   sendEmails
 });
