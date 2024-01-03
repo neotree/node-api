@@ -3,6 +3,36 @@ const sendEmail = require('./mailer');
 
 const pool = new Pool();
 
+const removeConfidentialData = () => (req, res) => {
+	const keys = req.body.keys || [];
+	pool.query("select id, data from sessions order by ingested_at desc limit 1;", (error, results) => {
+		if (error) return res.json({ error });
+
+		const data = results.rows.map(item => {
+			const data = item.data;
+			const conf = Object.keys(data.entries).filter(key => keys.includes(key));
+			keys.forEach(key => {
+				delete data.entries[key];
+			});
+			return {
+				id: item.id,
+				data: JSON.stringify(data),
+				conf,
+			}
+		}).filter(item => item.conf.length);
+		
+		if (data.length) {
+			data.forEach(({ id, data }, i) => {
+				pool.query('UPDATE public.sessions SET data = $1 WHERE id = $2', [data, id], () => {
+					if (i === (data.length - 1)) res.json({ success: true });
+				});
+			});
+		} else {
+			res.json({ success: true });
+		}
+	});
+};
+
 const countByUidPrefix = () => (req, res) => {
   pool.query(`SELECT count(*) FROM public.sessions WHERE uid LIKE '${req.query.uid_prefix}%';`, (e, rslts) => {
     if (e) throw e;
@@ -251,5 +281,6 @@ module.exports = (app, config = {}) => ({
   getSessionsByUID: getSessionsByUID(app, config),
   createExceptionTable,
   saveException: saveException(app, config),
+  removeConfidentialData: removeConfidentialData(app, config),
   sendEmails
 });

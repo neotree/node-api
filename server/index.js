@@ -112,6 +112,7 @@ app.delete('/sessions/:id', db.deleteSession);
 app.get('/last-ingested-sessions', db.getLastIngestedSessions);
 app.get('/find-sessions-by-uid', db.getSessionsByUID);
 app.post('/exceptions', db.saveException);
+app.post('/remove-confidential-data', db.removeConfidentialData);
 
 app.post('/save-poll-data', (req, res) => {
   const dbConfig = {
