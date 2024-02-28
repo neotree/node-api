@@ -22,7 +22,8 @@ const _removeConfidentialData = () => (req, res) => {
 		"BabyFirstName",
 		"BabySurname",
 		"BabyFirst",
-		"BabyLast"
+		"BabyLast",
+		'MotherAddressVillage',
 	];
 	console.log('loading sessions...');
 	const month = req.query.month;
