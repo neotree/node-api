@@ -25,7 +25,12 @@ const _removeConfidentialData = () => (req, res) => {
 		"BabyLast"
 	];
 	console.log('loading sessions...');
-	pool.query("select id, data from sessions order by ingested_at desc;", (error, results) => {
+	const month = req.query.month;
+	const year = req.query.year;
+	// pool.query(`select count(*) from sessions where EXTRACT(MONTH FROM ingested_at) = ${month} and EXTRACT(YEAR FROM ingested_at) = ${year}`, (error, results) => {
+	// 	res.json({ error, results });
+	// });
+	pool.query(`select id, data from sessions where EXTRACT(MONTH FROM ingested_at) = ${month} and EXTRACT(YEAR FROM ingested_at) = ${year} order by ingested_at desc;`, (error, results) => {
 		if (error) return res.json({ error });
 	
 		const data = results.rows.map(item => {
@@ -52,6 +57,7 @@ const _removeConfidentialData = () => (req, res) => {
 			});
 		} else {
 			console.log({ success: true });
+			res.json({ success: true });
 		}
 	});
 };
