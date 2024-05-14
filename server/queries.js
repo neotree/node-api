@@ -275,10 +275,10 @@ const saveException = () => (req, res) => {
     if (e) return res.status(201).send(e);
     res.status(200).send(data);
   };
-  const q = `INSERT INTO public.neotree_exception (message,device,country,stack,hospital,sent,version,battery,device_model,memory,editor_version) 
-  VALUES ($1, $2, $3, $4, $5,$6,$7,$8,$9,$10,$11) RETURNING id`
-  const { message, device, country, stack, hospital,version,battery,device_model,memory,editor_version } = req.body
-  pool.query(q, [message, device, country, stack, hospital, false,version,battery,device_model,memory,editor_version], (error, results) => {
+  const q = `INSERT INTO public.neotree_exception (device_id,device_hash,message,device,country,stack,hospital,sent,version,battery,device_model,memory,editor_version) 
+  VALUES ($1, $2, $3, $4, $5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`
+  const { deviceId, deviceHash, message, device, country, stack, hospital,version,battery,device_model,memory,editor_version } = req.body
+  pool.query(q, [deviceId, deviceHash, message, device, country, stack, hospital, false,version,battery,device_model,memory,editor_version], (error, results) => {
     if (error) {
       throw error
     } else done(null, `Exception: ${results.rows[0].id}`);
@@ -286,7 +286,7 @@ const saveException = () => (req, res) => {
 }
 const getExceptions = (callback) => {
 
-  pool.query('SELECT id, country, message,stack,version,battery,device_model,memory,editor_version FROM public.neotree_exception WHERE sent is false', (error, results) => {
+  pool.query('SELECT id, country, device_id, device_hash, message,stack,version,battery,device_model,memory,editor_version FROM public.neotree_exception WHERE sent is false', (error, results) => {
     if (error) callback(error, null)
     const jsonObject =  JSON.stringify(results.rows)
     callback(null,JSON.parse(jsonObject));
@@ -297,7 +297,9 @@ const getExceptions = (callback) => {
 const createExceptionTable = () => {
   pool.query(`CREATE TABLE IF NOT EXISTS public.neotree_exception (
     id SERIAL PRIMARY KEY,
-    message VARCHAR NOT NULL,
+    device_id VARCHAR NOT NULL,
+	device_hash VARCHAR NOT NULL,
+	message VARCHAR NOT NULL,
     device VARCHAR NOT NULL,
     country VARCHAR NOT NULL,
     stack VARCHAR NOT NULL,
