@@ -44,7 +44,9 @@ const HTML_TEMPLATE = (message) => {
               </div>
               <div class="email-body">
                 <p><b>COUNTRY</b>: ${country}</p>
-                <p><b>APP VERSION</b>: ${message.version}</p>
+                <p><b>DEVICE ID</b>: ${message.device_id}</p>
+				<p><b>DEVICE HASH</b>: ${message.device_hash}</p>
+				<p><b>APP VERSION</b>: ${message.version}</p>
                 <p><b>WEB EDITOR VERSION</b>: ${message.editor_version}</p>
                 <p><b>DEVICE DETAILS:</b> ${message.device_model}</p>
                 <p><b>AVAILABLE MEMORY:</b> ${message.memory}</p>
