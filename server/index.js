@@ -116,6 +116,10 @@ app.post('/remove-confidential-data', db.removeConfidentialData);
 app.get('/remove-confidential-data', db._removeConfidentialData);
 
 app.post('/save-poll-data', (req, res) => {
+  const done = e => {
+    if (e) return res.json({ error: e.message });
+    next();
+  };
   const dbConfig = {
     database: process.env.POLL_DATABASE_NAME,
     user: process.env.POLL_DATABASE_USER,
