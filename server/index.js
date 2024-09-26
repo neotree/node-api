@@ -142,16 +142,16 @@ app.post('/save-poll-data', (req, res) => {
   var currentDate = new Date();
 
   pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
-    if (error) return res.json(error.message);
+    if (error) return res.status(400).json(error.message);
 
     const count = Number(results.rows[0].count);
-    if (count) return res.json(null, `Session already exported`);
+    if (count) return res.status(301).json({ message: "Session already exported" });
 
     pool.query(
       'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', 
       [currentDate, req.body, uid, scriptId, unique_key], 
       (error, results) => {
-        if (error || !results) return res.json({ success: false, error: error || 'Something went wrong', });
+        if (error || !results) return res.status(200).json({ success: false, error: error || 'Something went wrong', });
         res.json({ success: true, id: results.rows[0].id, });
       }
     );
