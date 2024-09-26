@@ -115,7 +115,7 @@ app.post('/exceptions', db.saveException);
 app.post('/remove-confidential-data', db.removeConfidentialData);
 app.get('/remove-confidential-data', db._removeConfidentialData);
 
-app.post('/save-poll-data', (req, res) => {
+app.post('/save-poll-data', (req, res,next) => {
   const done = e => {
     if (e) return res.json({ error: e.message });
     next();
