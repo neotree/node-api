@@ -115,11 +115,8 @@ app.post('/exceptions', db.saveException);
 app.post('/remove-confidential-data', db.removeConfidentialData);
 app.get('/remove-confidential-data', db._removeConfidentialData);
 
-app.post('/save-poll-data', (req, res,next) => {
-  const done = e => {
-    if (e) return res.json({ error: e.message });
-    next();
-  };
+app.post('/save-poll-data', (req, res) => {
+
   const dbConfig = {
     database: process.env.POLL_DATABASE_NAME,
     user: process.env.POLL_DATABASE_USER,
@@ -145,10 +142,10 @@ app.post('/save-poll-data', (req, res,next) => {
   var currentDate = new Date();
 
   pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
-    if (error) return done(error.message);
+    if (error) return res.json(error.message);
 
     const count = Number(results.rows[0].count);
-    if (count) return done(null, `Session already exported`);
+    if (count) return res.json(null, `Session already exported`);
 
     pool.query(
       'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', 
