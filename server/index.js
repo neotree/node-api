@@ -145,7 +145,6 @@ app.post('/save-poll-data', (req, res) => {
   var currentDate = new Date();
 
   pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
-    console.log("--MY ERR--",error)
     if (error) return done(error.message);
 
     const count = Number(results.rows[0].count);
@@ -155,7 +154,6 @@ app.post('/save-poll-data', (req, res) => {
       'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', 
       [currentDate, req.body, uid, scriptId, unique_key], 
       (error, results) => {
-        console.log("--MY eNTRY--",error)
         if (error || !results) return res.json({ success: false, error: error || 'Something went wrong', });
         res.json({ success: true, id: results.rows[0].id, });
       }
