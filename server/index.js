@@ -142,18 +142,15 @@ console.log("----API - HEAT")
   var currentDate = new Date();
 
   pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
-    console.log("--HERS---",error)
     if (error) return res.status(400).json(error.message);
 
     const count = Number(results.rows[0].count);
-    console.log("--COUNT---",count)
     if (count) return res.status(301).json({ message: "Session already exported" });
 
     pool.query(
       'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', 
       [currentDate, req.body, uid, scriptId, unique_key], 
       (error, results) => {
-        console.log("--TRES---",error,results)
         if (error || !results) return res.status(400).json({ success: false, error: error || 'Something went wrong', });
         res.status(201).json({ success: true, id: results.rows[0].id, });
       }
