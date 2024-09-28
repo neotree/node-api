@@ -52,21 +52,18 @@ app.get('/update-sessions-key', (req, res) => {
 });
 
 app.post('*', (req, res, next) => {
-	const apiKey = req.headers['x-api-key'];
-	console.log('apiKey', apiKey);
-	next();
-//   const apiKey = req.headers['x-api-key'];
-//   const done = e => {
-//     if (e) return res.json({ error: e.message });
-//     next();
-//   };
-//   db.getApiKeys(apiKey)
-//     .then((rows = []) => {
-//       rows = rows.map(r => r.key);
-//       if (!rows.includes(apiKey)) done(new Error('Unauthorised api key'));
-//       done();
-//     })
-//     .catch(e => done(e));
+  const apiKey = req.headers['x-api-key'];
+  const done = e => {
+    if (e) return res.json({ error: e.message });
+    next();
+  };
+  db.getApiKeys(apiKey)
+    .then((rows = []) => {
+      rows = rows.map(r => r.key);
+      if (!rows.includes(apiKey)) done(new Error('Unauthorised api key'));
+      done();
+    })
+    .catch(e => done(e));
 });
 
 app.get('/', (_, response) => {
