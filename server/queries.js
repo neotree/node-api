@@ -178,7 +178,7 @@ const getSessionsByUID = () => (request, response) => {
 
 const saveSession = (app, { socket }) => (request, response) => {
   const done = (e, data) => {
-    if (e) return response.status(201).send(e);
+    if (e) return response.status(502).send(e.message || e);
     response.status(200).send(data);
   };
 
@@ -272,7 +272,7 @@ const getLastIngestedSessions = () => (req, res) => {
 
 const saveException = () => (req, res) => {
   const done = (e, data) => {
-    if (e) return res.status(201).send(e);
+    if (e) return res.status(502).send(e.message || e);
     res.status(200).send(data);
   };
   const q = `INSERT INTO public.neotree_exception (device_id,device_hash,message,device,country,stack,hospital,sent,version,battery,device_model,memory,editor_version) 

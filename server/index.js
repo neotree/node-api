@@ -116,46 +116,50 @@ app.post('/remove-confidential-data', db.removeConfidentialData);
 app.get('/remove-confidential-data', db._removeConfidentialData);
 
 app.post('/save-poll-data', (req, res) => {
-console.log("----API - HEAT")
-  const dbConfig = {
-    database: process.env.POLL_DATABASE_NAME,
-    user: process.env.POLL_DATABASE_USER,
-    password: process.env.POLL_DATABASE_PASSWORD,
-    port: process.env.POLL_DATABASE_PORT,
-    host: process.env.POLL_DATABASE_HOST,
-  };
+	try {
+		console.log("----API - HEAT")
+		const dbConfig = {
+			database: process.env.POLL_DATABASE_NAME,
+			user: process.env.POLL_DATABASE_USER,
+			password: process.env.POLL_DATABASE_PASSWORD,
+			port: process.env.POLL_DATABASE_PORT,
+			host: process.env.POLL_DATABASE_HOST,
+		};
 
-  if (!(dbConfig.database && dbConfig.user && dbConfig.password && 
-    dbConfig.port && dbConfig.host)) return res.json({ success: false, error: 'Database not setup' });
+		if (!(dbConfig.database && dbConfig.user && dbConfig.password && 
+			dbConfig.port && dbConfig.host)) return res.json({ success: false, error: 'Database not setup' });
 
-  const pool = new Pool(dbConfig);
+		const pool = new Pool(dbConfig);
 
-  let unique_key = `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
-  if (req.query.unique_key) unique_key = req.query.unique_key;
+		let unique_key = `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
+		if (req.query.unique_key) unique_key = req.query.unique_key;
 
-  var uid = "";
-  if (req.query.uid) uid = req.query.uid.replace('"', '').replace('"', '');
+		var uid = "";
+		if (req.query.uid) uid = req.query.uid.replace('"', '').replace('"', '');
 
-  var scriptId = "";
-  if (req.query.scriptId) scriptId = req.query.scriptId.replace('"', '').replace('"', '');
+		var scriptId = "";
+		if (req.query.scriptId) scriptId = req.query.scriptId.replace('"', '').replace('"', '');
 
-  var currentDate = new Date();
+		var currentDate = new Date();
 
-  pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
-    if (error) return res.status(400).json(error.message);
+		pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
+			if (error) return res.status(400).json(error.message);
 
-    const count = Number(results.rows[0].count);
-    if (count) return res.status(301).json({ message: "Session already exported" });
+			const count = Number(results.rows[0].count);
+			if (count) return res.status(301).json({ message: "Session already exported" });
 
-    pool.query(
-      'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', 
-      [currentDate, req.body, uid, scriptId, unique_key], 
-      (error, results) => {
-        if (error || !results) return res.status(400).json({ success: false, error: error || 'Something went wrong', });
-        res.status(201).json({ success: true, id: results.rows[0].id, });
-      }
-    );
-  });
+			pool.query(
+			'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', 
+			[currentDate, req.body, uid, scriptId, unique_key], 
+			(error, results) => {
+				if (error || !results) return res.status(400).json({ success: false, error: error || 'Something went wrong', });
+				res.status(200).json({ success: true, id: results.rows[0].id, });
+			}
+			);
+		});
+	} catch(e) {
+		res.status(502).json({ success: false, error: e.message, });
+	}
 });
 
 app = webAppMiddleware(app);
