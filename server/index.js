@@ -25,6 +25,7 @@ io.on('connection', socket => {
 });
 const db = require('./queries')(app, { socket: { io, subscribers } })
 
+app.get('/api/ping', (_, res) => res.json({ data: 'pong', }));
 
 app.get('/update-sessions-key', (req, res) => {
   function updateKey(count) {
