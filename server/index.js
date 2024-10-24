@@ -40,10 +40,10 @@ app.get('/update-sessions-key', (req, res) => {
       })));
       db.pool.query('select count(*) from public.sessions where unique_key is null;', (e, rslts) => {
         if (e) {
-          res.json({ success: false, error: e });
+          res.status(400).json({ success: false, error: e });
         } else {
           if (rslts.rows[0].count) return updateKey(rslts.rows[0].count);
-          res.json({ success: true, rslts });
+          res.status(200).json({ success: true, rslts });
         }
       });
     });
@@ -54,7 +54,7 @@ app.get('/update-sessions-key', (req, res) => {
 app.post('*', (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
   const done = e => {
-    if (e) return res.json({ error: e.message });
+    if (e) return res.status(400).json({ error: e.message });
     next();
   };
   db.getApiKeys(apiKey)
@@ -67,7 +67,7 @@ app.post('*', (req, res, next) => {
 });
 
 app.get('/', (_, response) => {
-  response.json({ info: 'Node.js, Express, and Postgres API' });
+  response.status(200).json({ info: 'Node.js, Express, and Postgres API' });
 });
 
 app.get('/test-mail', (_, res) => {
@@ -92,7 +92,7 @@ app.get('/test-mail', (_, res) => {
 			error,
 			info,
 		});
-		res.json({
+		res.status(error?400:200).json({
 			error,
 			success: error ? false : true,
 			info,
@@ -116,7 +116,6 @@ app.post('/remove-confidential-data', db.removeConfidentialData);
 app.get('/remove-confidential-data', db._removeConfidentialData);
 
 app.post('/save-poll-data', (req, res) => {
-console.log("----API - HEAT")
   const dbConfig = {
     database: process.env.POLL_DATABASE_NAME,
     user: process.env.POLL_DATABASE_USER,
