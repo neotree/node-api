@@ -114,53 +114,64 @@ app.get('/last-ingested-sessions', db.getLastIngestedSessions);
 app.get('/find-sessions-by-uid', db.getSessionsByUID);
 app.post('/exceptions', db.saveException);
 app.post('/remove-confidential-data', db.removeConfidentialData);
-app.get('/remove-confidential-data', db._removeConfidentialData);
+app.post('/save-poll-data', async (req, res) => {
+    try {
+        const dbConfig = {
+            database: process.env.POLL_DATABASE_NAME,
+            user: process.env.POLL_DATABASE_USER,
+            password: process.env.POLL_DATABASE_PASSWORD,
+            port: process.env.POLL_DATABASE_PORT,
+            host: process.env.POLL_DATABASE_HOST,
+        };
 
-app.post('/save-poll-data', (req, res) => {
+        if (!(dbConfig.database && dbConfig.user && dbConfig.password && 
+            dbConfig.port && dbConfig.host)) {
+            return res.status(500).json({ success: false, error: 'Database configuration is incomplete' });
+        }
 
-	try {
-		const dbConfig = {
-			database: process.env.POLL_DATABASE_NAME,
-			user: process.env.POLL_DATABASE_USER,
-			password: process.env.POLL_DATABASE_PASSWORD,
-			port: process.env.POLL_DATABASE_PORT,
-			host: process.env.POLL_DATABASE_HOST,
-		};
+        const pool = new Pool(dbConfig);
 
-		if (!(dbConfig.database && dbConfig.user && dbConfig.password && 
-			dbConfig.port && dbConfig.host)) return res.json({ success: false, error: 'Database not setup' });
+        let unique_key = `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
+        if (req.query.unique_key) unique_key = req.query.unique_key;
 
-		const pool = new Pool(dbConfig);
+        let uid = "";
+        if (req.query.uid) uid = req.query.uid.replace(/"/g, '');
 
-		let unique_key = `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
-		if (req.query.unique_key) unique_key = req.query.unique_key;
+        let scriptId = "";
+        if (req.query.scriptId) scriptId = req.query.scriptId.replace(/"/g, '');
 
-		var uid = "";
-		if (req.query.uid) uid = req.query.uid.replace('"', '').replace('"', '');
+        const currentDate = new Date();
 
-		var scriptId = "";
-		if (req.query.scriptId) scriptId = req.query.scriptId.replace('"', '').replace('"', '');
+        // Validate request body
+        if (!req.body || typeof req.body !== 'object') {
+            return res.status(302).json({ success: true, message: 'No Body Found' });
+        }
 
-		var currentDate = new Date();
+        const { rows } = await pool.query('SELECT count(*) FROM public.sessions WHERE unique_key = $1;', [unique_key]);
+        const count = Number(rows[0].count);
+        if (count) {
+            return res.status(301).json({ message: "Session already exported" });
+        }
 
-		pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
-			if (error) return res.status(400).json(error.message);
+        const insertResult = await pool.query(
+            'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', 
+            [currentDate, req.body, uid, scriptId, unique_key]
+        );
 
-			const count = Number(results.rows[0].count);
-			if (count) return res.status(301).json({ message: "Session already exported" });
+        if (!insertResult.rows[0]) {
+            throw new Error('Insert operation failed');
+        }
 
-			pool.query(
-			'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', 
-			[currentDate, req.body, uid, scriptId, unique_key], 
-			(error, results) => {
-				if (error || !results) return res.status(400).json({ success: false, error: error || 'Something went wrong', });
-				res.status(200).json({ success: true, id: results.rows[0].id, });
-			}
-			);
-		});
-	} catch(e) {
-		res.status(502).json({ success: false, error: e.message, });
-	}
+        res.status(200).json({ success: true, id: insertResult.rows[0].id });
+    } catch (e) {
+        console.error(e);
+        res.status(502).json({ success: false, error: e.message });
+    }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
 
 app = webAppMiddleware(app);
