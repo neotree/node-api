@@ -114,6 +114,7 @@ app.get('/last-ingested-sessions', db.getLastIngestedSessions);
 app.get('/find-sessions-by-uid', db.getSessionsByUID);
 app.post('/exceptions', db.saveException);
 app.post('/remove-confidential-data', db.removeConfidentialData);
+
 app.post('/save-poll-data', async (req, res) => {
     try {
         const dbConfig = {
@@ -169,11 +170,6 @@ app.post('/save-poll-data', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT|| 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
-
 app = webAppMiddleware(app);
 
 httpServer.listen(process.env.SERVER_PORT, (e) => {
@@ -192,7 +188,7 @@ httpServer.listen(process.env.SERVER_PORT, (e) => {
 
 
 }
-  
+
 );
 
 module.exports = app;
