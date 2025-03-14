@@ -124,15 +124,11 @@ app.post('/save-poll-data', async (req, res) => {
             port: process.env.POLL_DATABASE_PORT,
             host: process.env.POLL_DATABASE_HOST,
         };
-        logError("::PROCESSING STARTED")
-
-        if (!(dbConfig.database && dbConfig.user && dbConfig.password && 
+          if (!(dbConfig.database && dbConfig.user && dbConfig.password && 
             dbConfig.port && dbConfig.host)) {
             return res.status(500).json({ success: false, error: 'Database configuration is incomplete' });
         }
-        logError("::PASSED DB CONFIG")
-
-        const pool = new Pool(dbConfig);
+          const pool = new Pool(dbConfig);
 
         let unique_key = `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
         if (req.query.unique_key) unique_key = req.query.unique_key;
@@ -161,15 +157,14 @@ app.post('/save-poll-data', async (req, res) => {
             'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', 
             [currentDate, req.body, uid, scriptId, unique_key]
         );
-        logError(`::PASSED ISERT COUNT ${insertResult}`)
-
+       
         if (!insertResult.rows[0]) {
             throw new Error('Insert operation failed');
         }
 
         res.status(200).json({ success: true, id: insertResult.rows[0].id });
     } catch (e) {
-      logError(e)
+      logError(`:: SAVE POLL ERROR: ${e.message}`)
         res.status(502).json({ success: false, error: e.message });
     }
 });
