@@ -1,4 +1,5 @@
 'use strict'
+const {logError} = require('./helper')
 const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -6,7 +7,6 @@ const socketIO = require('socket.io');
 const { Pool, } = require('pg');
 var cron = require('node-cron');
 const { webAppMiddleware } = require('./web-app');
-
 let app = express();
 const httpServer = http.createServer(app);
 const io = socketIO(httpServer);
@@ -124,11 +124,13 @@ app.post('/save-poll-data', async (req, res) => {
             port: process.env.POLL_DATABASE_PORT,
             host: process.env.POLL_DATABASE_HOST,
         };
+        logError("::PROCESSING STARTED")
 
         if (!(dbConfig.database && dbConfig.user && dbConfig.password && 
             dbConfig.port && dbConfig.host)) {
             return res.status(500).json({ success: false, error: 'Database configuration is incomplete' });
         }
+        logError("::PASSED DB CONFIG")
 
         const pool = new Pool(dbConfig);
 
@@ -150,14 +152,16 @@ app.post('/save-poll-data', async (req, res) => {
 
         const { rows } = await pool.query('SELECT count(*) FROM public.sessions WHERE unique_key = $1;', [unique_key]);
         const count = Number(rows[0].count);
+        logError(`::PASSED ROW COUNT ${count}`)
         if (count) {
             return res.status(301).json({ message: "Session already exported" });
         }
-
+        
         const insertResult = await pool.query(
             'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id', 
             [currentDate, req.body, uid, scriptId, unique_key]
         );
+        logError(`::PASSED ISERT COUNT ${insertResult}`)
 
         if (!insertResult.rows[0]) {
             throw new Error('Insert operation failed');
@@ -165,7 +169,7 @@ app.post('/save-poll-data', async (req, res) => {
 
         res.status(200).json({ success: true, id: insertResult.rows[0].id });
     } catch (e) {
-        console.error(e);
+      logError(e)
         res.status(502).json({ success: false, error: e.message });
     }
 });
