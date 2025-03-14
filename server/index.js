@@ -28,7 +28,7 @@ const db = require('./queries')(app, { socket: { io, subscribers } })
 app.get('/api/ping', (_, res) => res.status(200).json({ data: 'pong', }));
 
 app.get('/update-sessions-key', (req, res) => {
-  function updateKey(count) {
+  function updateKey() {
     db.pool.query('select id from public.sessions where unique_key is null limit 500;', async (e, rslts) => {
       if (e) return res.json({ success: false, error: e.message || e, });
       await Promise.all(rslts.rows.map(row => new Promise((resolve, reject) => {
@@ -64,7 +64,9 @@ app.post('*', (req, res, next) => {
       if (!rows.includes(apiKey)) done(new Error('Unauthorised api key'));
       done();
     })
-    .catch(e => done(e));
+    .catch(e => {
+      logError(`::POST ERROR: ${e}`)
+      done(e)});
 });
 
 app.get('/', (_, response) => {
