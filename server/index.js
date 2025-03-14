@@ -148,7 +148,6 @@ app.post('/save-poll-data', async (req, res) => {
 
         const { rows } = await pool.query('SELECT count(*) FROM public.sessions WHERE unique_key = $1;', [unique_key]);
         const count = Number(rows[0].count);
-        logError(`::PASSED ROW COUNT ${count}`)
         if (count) {
             return res.status(301).json({ message: "Session already exported" });
         }
