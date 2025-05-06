@@ -20,3 +20,7 @@ Note that this project is part of the overall [Neotree System](https://github.co
 * `npm run dist` - run production server
 * `npm run prod-server` - run production server
 * `npm run stage-server` - run production (stage) server
+
+## Disclaimer
+
+PLEASE NOTE: In its compiled form, Neotree code may be a regulated medical device in some jurisdictions. Modification of the code and / or subsequently placing that modified code on the market may make that entity a legal manufacturer of a medical device and so subject to the requirements of the relevant legislation. Failure to comply with such legislation can often result in criminal and civil penalties. Neotree does not intend this code to be used for a medical purpose as a regulated medical device (or within a regulated medical device) where such requirements apply. Those deploying, implementing, or modifying this code should ensure that they meet all local regulatory requirements.
