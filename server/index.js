@@ -110,6 +110,8 @@ app.get('/sessions/:id', db.getSessionByTableId);
 app.get('/sessions', db.getSessions);
 //app.get('/sessions', db.getSessionByUID);
 app.post('/sessions', db.saveSession);
+app.get('/local', db.getLocalSessionsByUID);
+app.post('/local', db.saveLocalSession);
 app.put('/sessions/:id', db.updateSession);
 app.delete('/sessions/:id', db.deleteSession);
 app.get('/last-ingested-sessions', db.getLastIngestedSessions);
