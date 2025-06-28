@@ -190,7 +190,7 @@ const getLocalSessionsByUID = () => (request, response) => {
     [uid, hospital_id],
     (error, results) => {
       if (error) throw error;
-       const encrypted = CryptoJS.AES.encrypt(JSON.stringify(results.rows), sec).toString()
+       const encrypted = encryptLocalData(results.rows, sec)
       response.status(200).json({ sessions:  encrypted});
     }
   );
@@ -259,8 +259,7 @@ const saveLocalSession = (app, { socket }) => (request, response) => {
 
   const encrypted = req.body
 
-  const bytes = CryptoJS.AES.decrypt(encrypted, sec);
-  const decryptedData = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+  const decryptedData = decryptLocalData(encrypted,sec)
 
   inputLength = JSON.stringify(decryptedData).length;
   var currentDate = new Date();
@@ -394,6 +393,46 @@ const sendEmails = () => {
       }
     }
   })
+}
+
+const crypto = require('crypto');
+
+function encryptLocalData(data, secretKey) {
+  // 1. Generate random IV (16 bytes)
+  const iv = crypto.randomBytes(16);
+  
+  // 2. Create cipher
+  const cipher = crypto.createCipheriv(
+    'aes-256-cbc',
+    Buffer.from(secretKey, 'utf8'), // Key must be 32 bytes
+    iv
+  );
+  
+  // 3. Encrypt and output as Base64
+  let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'base64');
+  encrypted += cipher.final('base64');
+  
+  // 4. Return IV + ciphertext (both Base64 encoded)
+  return iv.toString('base64') + encrypted;
+}
+
+function decryptLocalData(encryptedData, secretKey) {
+  // 1. Extract IV (first 24 Base64 chars = 16 bytes)
+  const iv = Buffer.from(encryptedData.substring(0, 24), 'base64');
+  const ciphertext = encryptedData.substring(24);
+  
+  // 2. Create decipher
+  const decipher = crypto.createDecipheriv(
+    'aes-256-cbc',
+    Buffer.from(secretKey, 'utf8'),
+    iv
+  );
+  
+  // 3. Decrypt
+  let decrypted = decipher.update(ciphertext, 'base64', 'utf8');
+  decrypted += decipher.final('utf8');
+  
+  return JSON.parse(decrypted);
 }
 
 
