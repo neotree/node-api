@@ -119,6 +119,8 @@ app.get('/find-sessions-by-uid', db.getSessionsByUID);
 app.post('/exceptions', db.saveException);
 app.post('/remove-confidential-data', db.removeConfidentialData);
 
+
+
 app.post('/save-poll-data', async (req, res) => {
     try {
         const dbConfig = {
