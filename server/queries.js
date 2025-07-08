@@ -180,18 +180,19 @@ const getSessionsByUID = () => (request, response) => {
 
 const getLocalSessionsByUID = () => (request, response) => {
   const uid = request.query.uid
-  const hospital_id = request.query.hospital_id
+  const hospital_id = request.query.hospital
    const sec = process.env.LOCAL_SERVER_SECRET
   pool.query(
-    `SELECT DISTINCT ON (script_id) id, script_id, ingested_at, data 
+    `SELECT DISTINCT ON (uid,scriptid) id, scriptid, ingested_at, data 
      FROM public.sessions 
-     WHERE uid = $1 AND data->>'hospital_id' = $2
-     ORDER BY script_id, ingested_at DESC`,
+     WHERE uid = ($1) AND data->>'hospital_id' = ($2)
+     ORDER BY uid,scriptid, ingested_at DESC`,
     [uid, hospital_id],
     (error, results) => {
       if (error) throw error;
        const encrypted = encryptLocalData(results.rows, sec)
-      response.status(200).json({ sessions:  encrypted});
+       console.log(JSON.stringify(results.rows))
+      response.status(200).json(JSON.stringify({ sessions:  encrypted}));
     }
   );
 }
@@ -201,7 +202,6 @@ const saveSession = (app, { socket }) => (request, response) => {
     if (e) return response.status(502).send(e.message || e);
     response.status(200).send(data);
   };
-
   let unique_key = `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
   if (request.query.unique_key) unique_key = request.query.unique_key;
 
@@ -240,12 +240,12 @@ const saveSession = (app, { socket }) => (request, response) => {
 };
 
 const saveLocalSession = (app, { socket }) => (request, response) => {
+  try{
   const done = (e, data) => {
     if (e) return response.status(502).send(e.message || e);
     response.status(200).send(data);
   };
   const sec = process.env.LOCAL_SERVER_SECRET
-
   let unique_key = `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
   if (request.query.unique_key) unique_key = request.query.unique_key;
 
@@ -257,8 +257,7 @@ const saveLocalSession = (app, { socket }) => (request, response) => {
 
   const { ingested_at, data } = request.body;
 
-  const encrypted = req.body
-
+  const encrypted = request.body?.data
   const decryptedData = decryptLocalData(encrypted,sec)
 
   inputLength = JSON.stringify(decryptedData).length;
@@ -285,6 +284,11 @@ const saveLocalSession = (app, { socket }) => (request, response) => {
       done(`Session data too small`);
     }
   });
+}catch(ex){
+  console.warn("This is a warning",ex);
+console.error("This is an error",ex);
+console.debug("This is a debug message",ex);
+}
 };
 
 const updateSession = () => (request, response) => {
@@ -411,30 +415,38 @@ function encryptLocalData(data, secretKey) {
   // 3. Encrypt and output as Base64
   let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'base64');
   encrypted += cipher.final('base64');
-  
   // 4. Return IV + ciphertext (both Base64 encoded)
-  return iv.toString('base64') + encrypted;
+  return iv.toString('base64') +':'+ encrypted;
 }
 
 function decryptLocalData(encryptedData, secretKey) {
-  // 1. Extract IV (first 24 Base64 chars = 16 bytes)
-  const iv = Buffer.from(encryptedData.substring(0, 24), 'base64');
-  const ciphertext = encryptedData.substring(24);
-  
-  // 2. Create decipher
-  const decipher = crypto.createDecipheriv(
-    'aes-256-cbc',
-    Buffer.from(secretKey, 'utf8'),
-    iv
-  );
-  
-  // 3. Decrypt
-  let decrypted = decipher.update(ciphertext, 'base64', 'utf8');
-  decrypted += decipher.final('utf8');
-  
-  return JSON.parse(decrypted);
+  try {
+    // 1. Extract IV and ciphertext
+    const [ivB64, ciphertext] = encryptedData.split(':');
+    
+    // 2. Convert IV from Base64 to Buffer
+    const iv = Buffer.from(ivB64, 'base64');
+    
+    // 3. Ensure key is 32 bytes (AES-256 requirement)
+    const key = Buffer.alloc(32); // Create a 32-byte buffer
+    Buffer.from(secretKey, 'utf8').copy(key); // Copy the key
+    
+    // 4. Create decipher
+    const decipher = crypto.createDecipheriv(
+      'aes-256-cbc',
+      key,
+      iv
+    );
+    
+    let decrypted = decipher.update(ciphertext, 'base64', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return JSON.parse(decrypted);
+  } catch (error) {
+    console.error('Decryption error:', error);
+    throw error;
+  }
 }
-
 
 module.exports = (app, config = {}) => ({
   pool,
