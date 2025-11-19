@@ -4,7 +4,6 @@ const CryptoJS = require('crypto-js');
 
 const pool = new Pool();
 
-const _removeConfidentialData = () => (req, res) => {
   const keys = [
     "MotherFirstName",
     "MotherSurname",
@@ -25,7 +24,13 @@ const _removeConfidentialData = () => (req, res) => {
     "BabyFirst",
     "BabyLast",
     'MotherAddressVillage',
+    'MothersCell',
+    'KinAddress',
+    'KinName'
   ];
+
+const _removeConfidentialData = () => (req, res) => {
+
   console.log('loading sessions...');
   const month = req.query.month;
   const year = req.query.year;

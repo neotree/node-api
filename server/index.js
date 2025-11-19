@@ -179,8 +179,8 @@ app = webAppMiddleware(app);
 httpServer.listen(process.env.SERVER_PORT, (e) => {
   if(e){
   console.log('Failed to start server', e)
-  } else{
-    db.createExceptionTable();
+    db.createExceptionTable();  } else{
+
     cron.schedule('13 * * * *', () => {
         db.sendEmails();
       }, {
