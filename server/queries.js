@@ -246,8 +246,8 @@ const saveSession = (app, { socket }) => (request, response) => {
 
 const saveLocalSession = (app, { socket }) => (request, response) => {
   try{
-  const done = (e, data) => {
-    if (e) return response.status(502).send(e.message || e);
+  const done = (e, data, statusCode = 502) => {
+    if (e) return response.status(statusCode).send(e.message || e);
     response.status(200).send(data);
   };
   const sec = process.env.LOCAL_SERVER_SECRET
@@ -268,16 +268,20 @@ const saveLocalSession = (app, { socket }) => (request, response) => {
   inputLength = JSON.stringify(decryptedData).length;
   var currentDate = new Date();
 
-  pool.query('select count(*) from public.sessions where unique_key = $1;', [unique_key], (error, results) => {
+  // Check for duplicates on unique_key, uid, and scriptid
+  pool.query('select count(*) from public.sessions where unique_key = $1 OR (uid = $2 AND scriptId = $3);', [unique_key, uid, scriptId], (error, results) => {
     if (error) return done(error.message);
-
-    let q = 'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id';
 
     const count = Number(results.rows[0].count);
     if (count) {
-      // return done(null, `Session already exported`);
-      q = 'UPDATE public.sessions SET ingested_at=$1, data=$2, uid=$3, scriptId=$4, unique_key=$5 WHERE unique_key=$5 RETURNING id';
+      // Return 301 status code if duplicate record exists
+      return response.status(301).json({
+        success: false,
+        message: "Duplicate record - session already exists"
+      });
     }
+
+    let q = 'INSERT INTO public.sessions (ingested_at, data, uid, scriptId, unique_key) VALUES ($1, $2, $3, $4, $5) RETURNING id';
 
     if (inputLength > 200) {
       pool.query(q, [currentDate, decryptedData, uid, scriptId, unique_key], (error, results) => {
