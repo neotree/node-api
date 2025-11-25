@@ -258,11 +258,18 @@ app.post('/save-poll-data', async (req, res) => {
                 time TIMESTAMP WITHOUT TIME ZONE,
                 scriptid TEXT,
                 uid TEXT,
+                unique_key TEXT,
                 impilo_id TEXT,
                 impilo_uid UUID DEFAULT gen_random_uuid(),
                 synced BOOLEAN DEFAULT false,
                 data TEXT
             );
+        `);
+
+        // Add unique_key column if it doesn't exist
+        await pool.query(`
+            ALTER TABLE public.impilo_sessions
+            ADD COLUMN IF NOT EXISTS unique_key TEXT;
         `);
 
         // Create index on unique fields for duplicate checking (date-based)
@@ -327,20 +334,22 @@ app.post('/save-poll-data', async (req, res) => {
         const sessionYear = sessionTime.getFullYear();
         const currentDate = new Date(); // For ingested_at timestamp
 
-        // Check for duplicates based on uid, scriptid, and date (not full timestamp)
+        // Check for duplicates on unique_key, uid, and scriptid
+        let unique_key = `${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}${Math.random().toString(36).substring(2)}`;
+        if (req.query.unique_key) unique_key = req.query.unique_key;
+
         const duplicateCheck = await pool.query(
-            'SELECT count(*) FROM public.impilo_sessions WHERE uid = $1 AND scriptid = $2 AND DATE(time) = DATE($3)',
-            [uid, scriptId, sessionTime]
+            'SELECT count(*) FROM public.impilo_sessions WHERE unique_key = $1 OR (uid = $2 AND scriptid = $3)',
+            [unique_key, uid, scriptId]
         );
 
         const duplicateCount = Number(duplicateCheck.rows[0].count);
         if (duplicateCount > 0) {
             return res.status(301).json({
                 success: false,
-                message: "Duplicate record - session already exists for this date"
+                message: "Duplicate record - session already exists"
             });
         }
-
         // Generate impilo_id: PP-DD-SS-YYYY-P-XXXXX
         // Get the current sequence number for this year and facility
         const sequenceQuery = await pool.query(`
@@ -386,10 +395,10 @@ app.post('/save-poll-data', async (req, res) => {
         // Insert the record
         const insertResult = await pool.query(
             `INSERT INTO public.impilo_sessions
-            (ingested_at, time, scriptid, uid, impilo_id, impilo_uid, synced, data)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            (ingested_at, time, scriptid, uid, unique_key, impilo_id, impilo_uid, synced, data)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING id`,
-            [currentDate, sessionTime, scriptId, uid, impiloIdWithIv, impiloUid, false, encryptedDataWithIv]
+            [currentDate, sessionTime, scriptId, uid, unique_key, impiloIdWithIv, impiloUid, false, encryptedDataWithIv]
         );
 
         if (!insertResult.rows[0]) {
