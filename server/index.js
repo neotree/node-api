@@ -287,9 +287,9 @@ app.post('/save-poll-data', async (req, res) => {
 
         // Validate scriptId is provided
         if (!scriptId) {
-            return res.status(400).json({
+            return res.status(200).json({
                 success: false,
-                error: 'scriptId is required'
+                message: 'scriptId is required - record ignored'
             });
         }
 
@@ -302,9 +302,9 @@ app.post('/save-poll-data', async (req, res) => {
             facilityCode = facilityCodes.facility;
             programType = facilityCodes.programType;
         } catch (error) {
-            return res.status(400).json({
+            return res.status(200).json({
                 success: false,
-                error: error.message
+                message: `scriptId '${scriptId}' not found in facility-mapper - record ignored`
             });
         }
 
