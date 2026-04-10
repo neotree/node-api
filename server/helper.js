@@ -3,26 +3,32 @@ const path = require('path');
 
 const MAX_LOG_BYTES = 1024 * 1024; // 1 MB safeguard
 
-// Prefer /logs, fall back to the current working directory when not writable.
-function resolveLogFilePath() {
-    const preferredDir = '/logs';
-    if (ensureDirectory(preferredDir)) {
-        return path.join(preferredDir, 'error.log');
-    }
-
-    const fallbackDir = process.cwd();
-    ensureDirectory(fallbackDir);
-    return path.join(fallbackDir, 'error.log');
-}
-
-function ensureDirectory(dirPath) {
+function ensureDirectoryWritable(dirPath) {
     try {
         fs.mkdirSync(dirPath, { recursive: true });
+        fs.accessSync(dirPath, fs.constants.W_OK);
         return true;
     } catch (err) {
-        console.error(`Unable to use log directory ${dirPath}:`, err.message);
+        console.error(`Unable to use log directory ${dirPath}: ${err.message}`);
         return false;
     }
+}
+
+// Prefer /logs, fall back to the current working directory when not writable.
+function resolveLogFilePath() {
+    const candidates = ['/logs', process.cwd()];
+    for (const dir of candidates) {
+        if (ensureDirectoryWritable(dir)) {
+            const filePath = path.join(dir, 'error.log');
+            console.log(`[logger] Writing logs to ${filePath}`);
+            return filePath;
+        }
+    }
+
+    // As a last resort, place the file next to this helper.
+    const fallback = path.join(__dirname, 'error.log');
+    console.log(`[logger] Fallback log path in use: ${fallback}`);
+    return fallback;
 }
 
 const logFilePath = resolveLogFilePath();
@@ -95,7 +101,7 @@ function writeToLog(level, ...payloads) {
         // Append the message to the log file synchronously to ensure it's written
         fs.appendFileSync(logFilePath, logMessage, 'utf8');
     } catch (err) {
-        console.error('Error writing to log file:', err);
+        console.error(`Error writing to log file (${logFilePath}):`, err);
     }
 }
 
@@ -109,4 +115,4 @@ function logInfo(...infoPayloads) {
     writeToLog('INFO', ...infoPayloads);
 }
 
-module.exports = { logError, logInfo, serializeError };
+module.exports = { logError, logInfo, serializeError, logFilePath };
