@@ -1,6 +1,6 @@
 'use strict'
 const crypto = require('crypto');
-const {logError, logInfo} = require('./helper')
+const {logError, logInfo, serializeError} = require('./helper')
 const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -905,19 +905,26 @@ app.post('/save-poll-data', async (req, res) => {
         }
 
     } catch (e) {
-        logError('\n=== ERROR CAUGHT IN /save-poll-data ===');
-        logError('[Error Message] ' + e.message);
-        logError('[Error Stack] ' + e.stack);
-        logError('[Error Code] ' + e.code);
-        logError('[Error Constraint] ' + e.constraint);
-        logError('[Full Error Object] ' + JSON.stringify({
-            message: e.message,
-            code: e.code,
-            constraint: e.constraint,
-            detail: e.detail,
-            file: e.file,
-            line: e.line
-        }, null, 2));
+        const safeHeaders = {
+            'content-type': req?.headers?.['content-type'],
+            'content-length': req?.headers?.['content-length']
+        };
+
+        const errorContext = {
+            route: '/save-poll-data',
+            uid,
+            scriptId,
+            unique_key,
+            requestUrl: req?.originalUrl,
+            query: req?.query,
+            bodyKeys: req?.body ? Object.keys(req.body) : [],
+            started_at: req?.body?.started_at,
+            safeHeaders
+        };
+
+        logError('=== ERROR CAUGHT IN /save-poll-data ===', { context: errorContext });
+        logError('Error details', serializeError(e));
+        logError(e); // includes stack trace
         logError(`:: SAVE IMPILO ERROR: ${e.message}`);
         // Close pool on error if it exists
         if (pool) {

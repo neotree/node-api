@@ -109,3 +109,4 @@ typings/
 # Facility mapper configuration
 facility-mapper.json
 *saved-records
+.codex
