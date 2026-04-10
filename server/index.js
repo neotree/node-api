@@ -350,6 +350,11 @@ app.post('/remove-confidential-data', db.removeConfidentialData);
 
 app.post('/save-poll-data', async (req, res) => {
     let pool; // Declare pool outside try block for access in catch block
+    let uid = '';
+    let scriptId = '';
+    let unique_key = null;
+    let cacheKey = null;
+    let started_at;
 
     // Log incoming request data - OUTSIDE of try block to catch all requests
     try {
@@ -379,24 +384,29 @@ app.post('/save-poll-data', async (req, res) => {
     try {
 
         // Extract uid, scriptid, and started_at early for request deduplication
-        let uid = "";
-        if (req.query.uid) uid = req.query.uid.replace(/"/g, '');
+        uid = (req.query.uid || '').replace(/"/g, '');
         logInfo(`[Extracted uid from query]: "${uid}" (length: ${uid.length})`);
 
-        let scriptId = "";
-        if (req.query.scriptId) scriptId = req.query.scriptId.replace(/"/g, '');
+        scriptId = (req.query.scriptId || '').replace(/"/g, '');
         logInfo(`[Extracted scriptId from query]: "${scriptId}" (length: ${scriptId.length})`);
 
-        const { started_at } = req.body || {};
+        ({ started_at } = req.body || {});
         logInfo(`[Extracted started_at from body]: "${started_at}"`);
         logInfo(`[Body keys present]: ${req.body ? Object.keys(req.body).join(', ') : 'No body'}`);
 
         // Create cache key for request deduplication using unique_key from query params
         // This prevents duplicate processing of the exact same request
-        let unique_key = req.query.unique_key || null;
+        unique_key = req.query.unique_key || null;
         logInfo(`[Cache/Deduplication key]: ${unique_key || 'Not provided'}`);
-        const cacheKey = unique_key ? `unique_key:${unique_key}` : null;
+        cacheKey = unique_key ? `unique_key:${unique_key}` : null;
         const CACHE_TIMEOUT = 10000; // 10 seconds - window for duplicate requests
+        const respond = (status, body) => {
+            if (cacheKey && requestCache[cacheKey]) {
+                requestCache[cacheKey].processing = false;
+                requestCache[cacheKey].result = { status, body };
+            }
+            return res.status(status).json(body);
+        };
 
         // Only apply deduplication if unique_key is provided
         if (cacheKey && requestCache[cacheKey]) {
@@ -456,35 +466,56 @@ app.post('/save-poll-data', async (req, res) => {
             port: process.env.IMPILO_DATABASE_PORT ,
             host: process.env.IMPILO_DATABASE_HOST
         };
-     
+        logInfo(`[DB Config] host=${dbConfig.host} port=${dbConfig.port} database=${dbConfig.database} user=${dbConfig.user}`);
         if (!(dbConfig.database && dbConfig.user && dbConfig.password &&
             dbConfig.port && dbConfig.host)) {
-            return res.status(500).json({ success: false, error: 'Database configuration is incomplete' });
+            logError('[DB Config Error] Database configuration is incomplete');
+            return respond(500, { success: false, error: 'Database configuration is incomplete' });
         }
 
         // Connect to PostgreSQL server (without specifying database)
-        const adminPool = new Pool({
-            user: dbConfig.user,
-            password: dbConfig.password,
-            port: dbConfig.port,
-            host: dbConfig.host,
-            database: 'postgres' // Connect to default database
-        });
+        let adminPool;
+        try {
+            logInfo('[DB Admin] Connecting to postgres to ensure target DB exists');
+            adminPool = new Pool({
+                user: dbConfig.user,
+                password: dbConfig.password,
+                port: dbConfig.port,
+                host: dbConfig.host,
+                database: 'postgres', // Connect to default database
+                connectionTimeoutMillis: 5000
+            });
 
-        // Check if database exists, create if it doesn't
-        const dbCheckResult = await adminPool.query(
-            "SELECT 1 FROM pg_database WHERE datname = $1",
-            [dbConfig.database]
-        );
+            // Check if database exists, create if it doesn't
+            const dbCheckResult = await adminPool.query(
+                "SELECT 1 FROM pg_database WHERE datname = $1",
+                [dbConfig.database]
+            );
+            logInfo(`[DB Admin] Database check rows: ${dbCheckResult.rows.length}`);
 
-        if (dbCheckResult.rows.length === 0) {
-            await adminPool.query(`CREATE DATABASE ${dbConfig.database}`);
+            if (dbCheckResult.rows.length === 0) {
+                logInfo(`[DB Admin] Creating database ${dbConfig.database}`);
+                await adminPool.query(`CREATE DATABASE ${dbConfig.database}`);
+            }
+        } catch (adminErr) {
+            logError('[DB Admin Error]', serializeError(adminErr));
+            throw adminErr;
+        } finally {
+            if (adminPool) {
+                try {
+                    await adminPool.end();
+                } catch (endErr) {
+                    logError('[DB Admin Error] Failed to close admin pool', serializeError(endErr));
+                }
+            }
         }
 
-        await adminPool.end();
-
         // Now connect to the impilo database
-        pool = new Pool(dbConfig);
+        pool = new Pool({
+            ...dbConfig,
+            connectionTimeoutMillis: 5000
+        });
+        logInfo('[DB] Pool created for impilo database');
 
         // Create table if it doesn't exist
         await pool.query(`
@@ -529,7 +560,7 @@ app.post('/save-poll-data', async (req, res) => {
 
         // Validate scriptId is provided (uid and scriptId already extracted at top)
         if (!scriptId) {
-            return res.status(200).json({
+            return respond(200, {
                 success: false,
                 message: 'scriptId is required - record ignored'
             });
@@ -548,13 +579,13 @@ app.post('/save-poll-data', async (req, res) => {
             isAdmission = facilityCodes.isAdmission ?? true; // Default to true if not specified
             allowMultipleVal = facilityCodes.allowMultiple ?? false; // Default to false if not specified
             }else{
-               return res.status(200).json({
+               return respond(200, {
                 success: false,
                 message: `scriptId '${scriptId}' not found in facility-mapper - record ignored`
             });
             }
         } catch (error) {
-            return res.status(200).json({
+            return respond(200, {
                 success: false,
                 message: `scriptId '${scriptId}' unidentified error found - record ignored`
             });
@@ -564,14 +595,14 @@ app.post('/save-poll-data', async (req, res) => {
         logInfo(`[Validation] Request body type: ${typeof req.body}, Is object: ${typeof req.body === 'object'}`);
         if (!req.body || typeof req.body !== 'object') {
             logError('[VALIDATION_ERROR] Request body is missing or not an object');
-            return res.status(302).json({ success: true, message: 'No Body Found' });
+            return respond(302, { success: true, message: 'No Body Found' });
         }
 
         // Validate started_at is present (already extracted at top for deduplication)
         logInfo(`[Validation] started_at present: ${!!started_at}, Value: "${started_at}"`);
         if (!started_at) {
             logError('[VALIDATION_ERROR] started_at field is required but missing');
-            return res.status(400).json({
+            return respond(400, {
                 success: false,
                 error: 'started_at field is required in request body'
             });
@@ -585,7 +616,7 @@ app.post('/save-poll-data', async (req, res) => {
         logInfo(`[Date Parsing] Parsed date result: ${sessionTime.toISOString()}, Valid: ${!isNaN(sessionTime.getTime())}`);
         if (isNaN(sessionTime.getTime())) {
             logError(`[VALIDATION_ERROR] Invalid date format for started_at: "${started_at}"`);
-            return res.status(400).json({
+            return respond(400, {
                 success: false,
                 error: 'Invalid started_at date format'
             });
@@ -608,7 +639,7 @@ app.post('/save-poll-data', async (req, res) => {
             const duplicateCount = Number(duplicateCheck.rows[0].count);
             if (duplicateCount > 0) {
                 await pool.end();
-                return res.status(301).json({
+                return respond(301, {
                     success: false,
                     message: "Duplicate record - record with same uid, scriptid and date already exists"
                 });
@@ -624,7 +655,7 @@ app.post('/save-poll-data', async (req, res) => {
             logInfo(`[Duplicate Check] isAdmission=true, duplicateCount=${duplicateCount}`);
             if (duplicateCount > 0) {
                 await pool.end();
-                return res.status(301).json({
+                return respond(301, {
                     success: false,
                     message: "Duplicate record - session with same scriptid and time already exists"
                 });
@@ -641,6 +672,13 @@ app.post('/save-poll-data', async (req, res) => {
 
         // Setup encryption key (needed for both new and existing impilo_ids)
         const secretKey = process.env.IMPILO_ENCRYPTION_SECRET || process.env.LOCAL_SERVER_SECRET;
+        if (!secretKey) {
+            logError('[Encryption Error] IMPILO_ENCRYPTION_SECRET or LOCAL_SERVER_SECRET is not set');
+            return respond(500, {
+                success: false,
+                error: 'Encryption secret is not configured on the server'
+            });
+        }
         const keyBuffer = Buffer.alloc(32);
         Buffer.from(secretKey, 'utf8').copy(keyBuffer, 0, 0, 32);
 
@@ -707,7 +745,7 @@ app.post('/save-poll-data', async (req, res) => {
 
             if (!existingImpiloIdResult.rows.length) {
                 await pool.end();
-                return res.status(404).json({
+                return respond(404, {
                     success: false,
                     message: `No existing impilo_id found for uid: ${uid}. Please set isAdmission=true or allowMultiple=true for first record.`
                 });
@@ -751,7 +789,7 @@ app.post('/save-poll-data', async (req, res) => {
                     if (existingCount > 0) {
                         logInfo(`[Duplicate Detected] Record with uid=${uid}, scriptid=${scriptId} and same date already exists.`);
                         await pool.end();
-                        return res.status(301).json({
+                        return respond(301, {
                             success: false,
                             message: "Duplicate record - record with same uid, scriptid and date already exists"
                         });
@@ -768,7 +806,7 @@ app.post('/save-poll-data', async (req, res) => {
                     if (existingCount > 0) {
                         logInfo(`[Duplicate Detected] Admission record with uid=${uid} and scriptid=${scriptId} already exists.`);
                         await pool.end();
-                        return res.status(301).json({
+                        return respond(301, {
                             success: false,
                             message: "Duplicate record - admission session with same uid and scriptid already exists"
                         });
@@ -871,7 +909,7 @@ app.post('/save-poll-data', async (req, res) => {
                     retryCount++;
                     if (retryCount >= maxRetries) {
                         await pool.end();
-                        return res.status(409).json({
+                        return respond(409, {
                             success: false,
                             message: 'Failed to generate unique UUID after multiple attempts - please try again'
                         });
@@ -883,7 +921,7 @@ app.post('/save-poll-data', async (req, res) => {
                 if (insertError.constraint === 'idx_impilo_uid_scriptid_date') {
                     logInfo(`[Duplicate Detected] Constraint violation on uid+scriptid+date. Record already exists.`);
                     await pool.end();
-                    return res.status(301).json({
+                    return respond(301, {
                         success: false,
                         message: "Duplicate record - record with same uid, scriptid and date already exists"
                     });
@@ -893,7 +931,7 @@ app.post('/save-poll-data', async (req, res) => {
                 if (insertError.code === '23505' || insertError.message.toLowerCase().includes('duplicate')) {
                     logInfo(`[Duplicate Detected] Unique constraint violation: ${insertError.constraint || 'unknown'}`);
                     await pool.end();
-                    return res.status(301).json({
+                    return respond(301, {
                         success: false,
                         message: `Duplicate record - ${insertError.constraint || 'constraint'} violation`
                     });
@@ -915,17 +953,28 @@ app.post('/save-poll-data', async (req, res) => {
             uid,
             scriptId,
             unique_key,
+            cacheKey,
             requestUrl: req?.originalUrl,
             query: req?.query,
             bodyKeys: req?.body ? Object.keys(req.body) : [],
-            started_at: req?.body?.started_at,
-            safeHeaders
+            started_at: started_at || req?.body?.started_at,
+            safeHeaders,
+            dbHost: process.env.IMPILO_DATABASE_HOST,
+            dbName: process.env.IMPILO_DATABASE_NAME
         };
 
         logError('=== ERROR CAUGHT IN /save-poll-data ===', { context: errorContext });
         logError('Error details', serializeError(e));
         logError(e); // includes stack trace
         logError(`:: SAVE IMPILO ERROR: ${e.message}`);
+        // Make sure dedup cache is cleared for this request
+        if (cacheKey && requestCache[cacheKey]) {
+            requestCache[cacheKey].processing = false;
+            requestCache[cacheKey].result = {
+                status: 502,
+                body: { success: false, error: e.message || 'Internal server error' }
+            };
+        }
         // Close pool on error if it exists
         if (pool) {
             try {
@@ -934,7 +983,9 @@ app.post('/save-poll-data', async (req, res) => {
                 logError('Error closing pool: ' + poolError.message);
             }
         }
-        res.status(502).json({ success: false, error: e.message });
+        if (!res.headersSent) {
+            res.status(502).json({ success: false, error: e.message });
+        }
     }
 });
 
