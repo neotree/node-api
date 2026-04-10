@@ -827,6 +827,18 @@ app.post('/save-poll-data', async (req, res) => {
                 fs.appendFileSync(logFilePath, JSON.stringify(logEntry) + '\n', 'utf8');
                 logInfo(`[Logged] Record saved to ${logFilePath}`);
 
+                // Log saved record details (excluding impilo_uid)
+                const recordLogEntry = {
+                    uid: logEntry.uid,
+                    impilo_id: logEntry.impilo_id,
+                    impilo_id_source: logEntry.impilo_id_source,
+                    time: logEntry.time,
+                    scriptid: logEntry.scriptid,
+                    ingested_at: logEntry.ingested_at,
+                    id: logEntry.id
+                };
+                logInfo(`[Record Saved] ${JSON.stringify(recordLogEntry)}`);
+
                 // Close the pool after all operations are complete
                 await pool.end();
 
