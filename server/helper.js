@@ -16,7 +16,8 @@ function ensureDirectoryWritable(dirPath) {
 
 // Prefer /logs, fall back to the current working directory when not writable.
 function resolveLogFilePath() {
-    const candidates = ['/logs', process.cwd()];
+    const cwd = process.cwd();
+    const candidates = ['/logs', path.join(cwd, 'logs'), cwd];
     for (const dir of candidates) {
         if (ensureDirectoryWritable(dir)) {
             const filePath = path.join(dir, 'error.log');
