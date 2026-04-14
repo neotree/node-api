@@ -1,7 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 
-const MAX_LOG_BYTES = 1024 * 1024; // 1 MB safeguard
+const MAX_LOG_BYTES = 1024 * 1024; // 1 MB safeguard per file
+const MAX_LOG_FILES = 10; // cap the number of log files kept
+
+const LOG_LEVELS = {
+    ERROR: 'error',
+    INFO: 'info'
+};
 
 function ensureDirectoryWritable(dirPath) {
     try {
@@ -15,37 +21,64 @@ function ensureDirectoryWritable(dirPath) {
 }
 
 // Prefer /logs, fall back to the current working directory when not writable.
-function resolveLogFilePath() {
+function resolveLogDirectory() {
     const cwd = process.cwd();
     const candidates = ['/logs', path.join(cwd, 'logs'), cwd];
     for (const dir of candidates) {
         if (ensureDirectoryWritable(dir)) {
-            const filePath = path.join(dir, 'error.log');
-            console.log(`[logger] Writing logs to ${filePath}`);
-            return filePath;
+            console.log(`[logger] Writing logs to directory ${dir}`);
+            return dir;
         }
     }
 
-    // As a last resort, place the file next to this helper.
-    const fallback = path.join(__dirname, 'error.log');
-    console.log(`[logger] Fallback log path in use: ${fallback}`);
+    // As a last resort, place the directory next to this helper.
+    const fallback = path.join(__dirname, 'logs');
+    ensureDirectoryWritable(fallback);
+    console.log(`[logger] Fallback log directory in use: ${fallback}`);
     return fallback;
 }
 
-const logFilePath = resolveLogFilePath();
-let lastLoggedDate = new Date().toISOString().split('T')[0];  // YYYY-MM-DD format
+const logDirectory = resolveLogDirectory();
 
-function enforceMaxSize(nextMessageSize) {
+function currentDateString() {
+    return new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+}
+
+function getLogFilePath(level, dateString = currentDateString()) {
+    return path.join(logDirectory, `${level}-${dateString}.log`);
+}
+
+function enforceMaxSize(filePath, nextMessageSize) {
     try {
-        if (!fs.existsSync(logFilePath)) return;
-        const { size } = fs.statSync(logFilePath);
+        if (!fs.existsSync(filePath)) return;
+        const { size } = fs.statSync(filePath);
 
         // Clean up before the file grows beyond the 1 MB limit
         if (size + nextMessageSize >= MAX_LOG_BYTES) {
-            fs.truncateSync(logFilePath, 0);
+            fs.truncateSync(filePath, 0);
         }
     } catch (err) {
         console.error('Error enforcing log size limit:', err.message);
+    }
+}
+
+function pruneOldLogFiles() {
+    try {
+        const logFiles = fs.readdirSync(logDirectory)
+            .filter((file) => file.endsWith('.log'))
+            .map((file) => path.join(logDirectory, file))
+            .filter((filePath) => fs.existsSync(filePath));
+
+        if (logFiles.length <= MAX_LOG_FILES) return;
+
+        logFiles.sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs); // oldest first
+
+        while (logFiles.length > MAX_LOG_FILES) {
+            const oldest = logFiles.shift();
+            fs.unlinkSync(oldest);
+        }
+    } catch (err) {
+        console.error('Error pruning old log files:', err.message);
     }
 }
 
@@ -82,38 +115,41 @@ function serializeError(err) {
 // Helper function to write to log file using synchronous operations
 function writeToLog(level, ...payloads) {
     try {
-        const currentDate = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
-
-        // Check if the date has changed, meaning it's a new day
-        if (currentDate !== lastLoggedDate) {
-            if (fs.existsSync(logFilePath)) {
-                fs.truncateSync(logFilePath, 0); // Start fresh each day
-            }
-
-            lastLoggedDate = currentDate;
-        }
+        const filePath = getLogFilePath(level.toLowerCase());
 
         const timestamp = new Date().toISOString();
         const combined = payloads.length ? payloads.map(formatPayload).join(' | ') : '';
         const logMessage = `[${timestamp}] ${level}: ${combined}\n`;
 
-        enforceMaxSize(Buffer.byteLength(logMessage, 'utf8'));
+        enforceMaxSize(filePath, Buffer.byteLength(logMessage, 'utf8'));
 
         // Append the message to the log file synchronously to ensure it's written
-        fs.appendFileSync(logFilePath, logMessage, 'utf8');
+        fs.appendFileSync(filePath, logMessage, 'utf8');
+
+        pruneOldLogFiles();
     } catch (err) {
-        console.error(`Error writing to log file (${logFilePath}):`, err);
+        console.error('Error writing to log file:', err);
     }
 }
 
 // Function to log error messages to a file
 function logError(...errorPayloads) {
-    writeToLog('ERROR', ...errorPayloads);
+    writeToLog(LOG_LEVELS.ERROR.toUpperCase(), ...errorPayloads);
 }
 
 // Function to log info messages to a file
 function logInfo(...infoPayloads) {
-    writeToLog('INFO', ...infoPayloads);
+    writeToLog(LOG_LEVELS.INFO.toUpperCase(), ...infoPayloads);
 }
 
-module.exports = { logError, logInfo, serializeError, logFilePath };
+module.exports = {
+    logError,
+    logInfo,
+    serializeError,
+    getLogFilePath,
+    logDirectory,
+    // Maintain legacy compatibility for callers that previously used logFilePath
+    get logFilePath() {
+        return getLogFilePath(LOG_LEVELS.ERROR);
+    }
+};
