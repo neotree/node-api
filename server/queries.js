@@ -1,5 +1,6 @@
 const { Pool, Client } = require('pg');
 const sendEmail = require('./mailer');
+const { layout: mailLayout } = require('./mail-template');
 const CryptoJS = require('crypto-js');
 
 const pool = new Pool();
@@ -314,7 +315,7 @@ const updateException = (id) => {
   const itemId = parseInt(id);
 
   pool.query('UPDATE public.neotree_exception SET sent = true where id = $1', [itemId], (error, results) => {
-    if (error) throw error;
+    if (error) console.error('Failed to mark exception as sent', error.message);
   }
   );
 };
@@ -351,6 +352,38 @@ const getLastIngestedSessions = () => (req, res) => {
   });
 };
 
+
+const CE_PREFIXES = ['[Conditional expression failed to evaluate]', '[EligibilityCriteria.evaluateCondition]'];
+const CE_LIKE = CE_PREFIXES.map((p) => `${p}%`);
+const isCe = (message) => typeof message === 'string' && CE_PREFIXES.some((p) => message.startsWith(p));
+
+
+const ceFingerprint = (stack) => {
+  const text = `${stack || ''}`
+  try {
+    const stored = JSON.parse(text)
+    if (typeof stored?.ce === 'string') return stored
+  } catch (e) {}
+  try {
+    const extra = JSON.parse(text.slice(text.lastIndexOf('\n') + 1))
+    if (typeof extra.condition === 'string') return { ce: extra.condition, authored: true }
+    if (typeof extra.expression !== 'string') return null
+    if (extra.expression !== extra.compiled) return { ce: extra.expression, authored: true }
+    const shape = extra.compiled
+      .replace(/"(?:[^"\\]|\\.)*"/g, '?')
+      .replace(/\d+(?:\.\d+)?|\b(?:true|false|null)\b/g, '?')
+    return shape.includes('"') ? null : { ce: shape, authored: false }
+  } catch (e) {
+    return null
+  }
+}
+
+const stackToStore = (message, stack) => {
+  if (!isCe(message)) return stack
+  const fingerprint = ceFingerprint(stack)
+  return fingerprint ? JSON.stringify(fingerprint) : ''
+}
+
 const saveException = () => (req, res) => {
   const done = (e, data) => {
     if (e) return res.status(502).send(e.message || e);
@@ -359,16 +392,15 @@ const saveException = () => (req, res) => {
   const q = `INSERT INTO public.neotree_exception (device_id,device_hash,message,device,country,stack,hospital,sent,version,battery,device_model,memory,editor_version) 
   VALUES ($1, $2, $3, $4, $5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`
   const { deviceId, deviceHash, message, device, country, stack, hospital, version, battery, device_model, memory, editor_version } = req.body
-  pool.query(q, [deviceId, deviceHash, message, device, country, stack, hospital, false, version, battery, device_model, memory, editor_version], (error, results) => {
-    if (error) {
-      throw error
-    } else done(null, `Exception: ${results.rows[0].id}`);
+  pool.query(q, [deviceId, deviceHash, message, device, country || '', stackToStore(message, stack), hospital, false, version, battery, device_model, memory, editor_version], (error, results) => {
+    if (error) return done(error)
+    done(null, `Exception: ${results.rows[0].id}`);
   })
 }
 const getExceptions = (callback) => {
 
-  pool.query('SELECT id, country, device_id, device_hash, message,stack,version,battery,device_model,memory,editor_version FROM public.neotree_exception WHERE sent is false', (error, results) => {
-    if (error) callback(error, null)
+  pool.query('SELECT id, country, device_id, device_hash, message,stack,version,battery,device_model,memory,editor_version FROM public.neotree_exception WHERE sent is false AND message NOT LIKE ALL($1)', [CE_LIKE], (error, results) => {
+    if (error) return callback(error, null)
     const jsonObject = JSON.stringify(results.rows)
     callback(null, JSON.parse(jsonObject));
   });
@@ -391,21 +423,199 @@ const createExceptionTable = () => {
     device_model VARCHAR,
     memory VARCHAR,
     editor_version VARCHAR
-  )`)
+  )`, (error) => error && console.error('Failed to create exception table', error.message))
 }
 const sendEmails = () => {
   getExceptions((err, results) => {
-    if (err) throw err
+    if (err) return console.error('Failed to load exception email queue', err.message)
     if (Array.isArray(results)) {
-      for (msg of results) {
-        sendEmail(msg, (e, res) => {
-          if (e) throw e
-          //DO NOTHING
+      for (const msg of results) {
+        sendEmail(msg, (e) => {
+          if (e) return console.error('Failed to send exception email', e.message)
           updateException(msg.id);
         })
       }
     }
   })
+}
+
+const CE_LOOKUP_BATCH = 1000
+
+const locateCes = async (lookups) => {
+  const { EDITOR_URL, EDITOR_API_KEY } = process.env
+  if (!EDITOR_URL || !EDITOR_API_KEY || typeof fetch !== 'function') return null
+  const pairs = lookups.flatMap(({ site, expressions }) => expressions.map((ce) => [site, ce]))
+  try {
+    const located = { sites: {}, dataVersion: null }
+    for (let i = 0; i === 0 || i < pairs.length; i += CE_LOOKUP_BATCH) {
+      const batch = new Map(i ? [] : lookups.map(({ site }) => [site, []]))
+      for (const [site, ce] of pairs.slice(i, i + CE_LOOKUP_BATCH)) {
+        if (!batch.has(site)) batch.set(site, [])
+        batch.get(site).push(ce)
+      }
+      const res = await fetch(`${EDITOR_URL.replace(/\/$/, '')}/api/app/ce-locations`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': EDITOR_API_KEY },
+        body: JSON.stringify({ sites: [...batch].map(([site, expressions]) => ({ site, expressions })) }),
+        signal: AbortSignal.timeout(120000),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const body = await res.json()
+      for (const [site, answer] of Object.entries(body.sites || {})) {
+        const known = located.sites[site]
+        located.sites[site] = known ? { ...known, locations: { ...known.locations, ...answer.locations } } : answer
+      }
+      if (located.dataVersion == null) located.dataVersion = body.dataVersion ?? null
+    }
+    return located
+  } catch (e) {
+    console.error('CE digest: web editor lookup failed', e.message)
+    return null
+  }
+}
+
+const IMPACTS = ['high', 'medium', 'low']
+// Bounds one run after a long outage; the rest is reported the next day.
+const CE_DIGEST_MAX_ROWS = 50000
+
+// Only a CE as authored that the editor searched for in the site's scripts and did not find counts
+// as gone. A value-stripped shape, "()" or a CE missing from the answer stays a fault, so nothing
+// that may still be broken is hidden.
+const isGone = (item) => item.resolved && item.authored && !item.total
+
+// One email a day, one section per reporting site: a site's tablets sync only that site's scripts,
+// so each site's CEs are looked up in its own scripts. Each faulty CE is listed once per site with
+// where it is, what its failure does and how to fix it. A CE the site's scripts no longer have was
+// fixed, changed or removed after the reporting tablets last downloaded; those tablets are listed
+// with the CEs instead. Hermes offsets ("1:93:") in the error vary with the substituted values, and
+// any double-quoted text in it is a substituted value, so both are stripped.
+const sendCeDigest = () => {
+  pool.query(
+    'SELECT id, message, stack, device_id, device_hash, hospital, editor_version, country FROM public.neotree_exception WHERE sent is false AND message LIKE ANY($1) ORDER BY id LIMIT $2',
+    [CE_LIKE, CE_DIGEST_MAX_ROWS],
+    async (error, results) => {
+      if (error) return console.error('CE digest query failed', error.message)
+      if (!results.rows.length) return
+      try {
+        const sites = new Map() // site id ('' when not reported) -> Map(CE -> fault)
+        const versions = new Map() // device -> newest data version in its reports
+        for (const row of results.rows) {
+          const fingerprint = ceFingerprint(row.stack)
+          const error = row.message.replace(/\] \d+:\d+:/, '] ').replace(/"(?:[^"\\]|\\.)*"/g, '"[redacted]"')
+          row.key = fingerprint ? fingerprint.ce : error
+          row.site = row.hospital || ''
+          if (!sites.has(row.site)) sites.set(row.site, new Map())
+          const faults = sites.get(row.site)
+          if (!faults.has(row.key)) faults.set(row.key, { ...fingerprint, error, devices: new Set(), ids: [] })
+          const fault = faults.get(row.key)
+          fault.devices.add(row.device_id)
+          fault.ids.push(row.id)
+          versions.set(row.device_id, Math.max(versions.get(row.device_id) || 0, Number(row.editor_version) || 0))
+        }
+
+        const located = await locateCes([...sites].map(([site, faults]) => ({
+          site: site || null,
+          expressions: [...faults.values()].filter((f) => f.ce).map((f) => f.ce),
+        })))
+
+        const sections = [...sites].map(([site, faults]) => {
+          const answer = located && located.sites[site]
+          const items = [...faults.values()].map((fault) => {
+            const entry = answer && fault.ce && answer.locations[fault.ce]
+            const { matches = [], total = matches.length, elsewhere = 0, fix } = entry || {}
+            const rank = Math.min(IMPACTS.length, ...matches.map((m) => IMPACTS.indexOf(m.impact)).filter((i) => i >= 0))
+            return { ...fault, matches, total, elsewhere, fix, rank, resolved: Boolean(entry) }
+          }).sort((a, b) => a.rank - b.rank || b.devices.size - a.devices.size || b.ids.length - a.ids.length)
+          const toFix = items.filter((item) => !isGone(item))
+          const goneKeys = new Set(items.filter(isGone).map((item) => item.ce))
+          const behind = new Map()
+          for (const row of results.rows) {
+            if (row.site !== site || !goneKeys.has(row.key)) continue
+            if (!behind.has(row.device_id)) behind.set(row.device_id, { tablet: row.device_hash || row.device_id, version: versions.get(row.device_id), ces: new Set(), uploads: 0 })
+            const tablet = behind.get(row.device_id)
+            tablet.ces.add(row.key)
+            tablet.uploads++
+          }
+          const name = (answer && answer.name) || site || 'Site not reported'
+          return { name, scoped: Boolean(answer && answer.scoped), items, toFix, behind, high: toFix.filter((item) => item.rank === 0).length }
+        }).sort((a, b) => b.high - a.high || b.toFix.length - a.toFix.length || a.name.localeCompare(b.name))
+
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+        const where = (item) => {
+          if (item.matches.length) {
+            const shown = item.matches.slice(0, 5).map((m) => `<a href="${esc(m.href)}">${esc(m.script)} › ${esc(m.where)}</a><br><i>${esc(m.consequence)}</i>`)
+            if (item.total > shown.length) shown.push(`…and ${item.total - shown.length} more`)
+            if (item.elsewhere) shown.push(`Also in ${item.elsewhere} place(s) in other sites' scripts`)
+            return shown.join('<br>')
+          }
+          if (!item.ce) return 'Condition not reported by the app'
+          if (!item.resolved) return 'Location unavailable: web editor lookup not configured or failed'
+          if (item.ce === '()') return 'An empty condition (the app does not say where)'
+          return 'A field, option or search-field condition (the app does not say which)'
+        }
+        // Same look as the exception email: its layout, label lines and header colour.
+        const table = 'width="100%" border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse"'
+        const headRow = 'bgcolor="#1a313d" style="color:#fff;text-align:left"'
+        const faultRows = (s) => s.toFix.map((item) => `<tr valign="top">
+          <td><b>${(IMPACTS[item.rank] || '—').toUpperCase()}</b></td>
+          <td>${where(item)}</td>
+          <td><code style="white-space:pre-wrap">${esc(item.ce || '')}</code><br>${esc(item.error)}${item.fix ? `<br><b>Fix:</b> ${esc(item.fix)}` : ''}</td>
+          <td>${item.devices.size} device(s), ${item.ids.length} upload(s)</td>
+        </tr>`).join('')
+        const tabletRows = (s) => [...s.behind.values()].sort((a, b) => b.ces.size - a.ces.size).map((t) => {
+          const ces = [...t.ces]
+          const listed = ces.slice(0, 5).map((ce) => `<code style="white-space:pre-wrap">${esc(ce)}</code>`)
+          if (ces.length > 5) listed.push(`…and ${ces.length - 5} more`)
+          return `<tr valign="top">
+          <td>${esc(t.tablet)}</td><td>${t.version || '?'}</td><td>${listed.join('<br>')}<br>${ces.length} condition(s), ${t.uploads} upload(s)</td>
+        </tr>`
+        }).join('')
+        const section = (s) => `
+                <p style="background-color:#1a313d;color:#fff;padding:8px 12px"><b>SITE</b>: ${esc(s.name)}</p>
+                <p><b>FAULTY CONDITIONS</b>: ${s.toFix.length} (${s.high} high impact)${s.behind.size ? `&nbsp;&nbsp; <b>TABLETS BEHIND</b>: ${s.behind.size}` : ''}</p>
+                ${located && !s.scoped ? '<p><i>The web editor does not know this site, so all scripts were searched.</i></p>' : ''}
+                ${s.toFix.length ? `<table ${table}><tr ${headRow}><th>Impact</th><th>Where</th><th>Condition</th><th>Seen</th></tr>${faultRows(s)}</table>` : ''}
+                ${s.behind.size ? `<p><b>TABLETS RUNNING CONDITIONS NO LONGER IN THIS SITE'S SCRIPTS</b></p>
+                <table ${table}><tr ${headRow}><th>Tablet</th><th>Data version</th><th>Conditions no longer in the site's scripts</th></tr>${tabletRows(s)}</table>` : ''}`
+
+        const server = process.env.NEOTREE_SERVER_TYPE || 'unknown'
+        const countries = [...new Set(results.rows.map((row) => row.country).filter(Boolean))]
+          .map((c) => ({ zw: 'ZIMBABWE', mw: 'MALAWI' }[c] || c.toUpperCase())).join(', ')
+        const faulty = sections.reduce((n, s) => n + s.toFix.length, 0)
+        const high = sections.reduce((n, s) => n + s.high, 0)
+        const behind = sections.reduce((n, s) => n + s.behind.size, 0)
+
+        sendEmail.raw({
+          to: process.env.CE_DIGEST_RECEIVERS || process.env.MAIL_RECEIVERS,
+          subject: `NEOTREE CE DIGEST (${server}): ${faulty} faulty condition(s), ${high} high impact, ${sections.length} site(s)${behind ? `, ${behind} tablet(s) behind` : ''}`,
+          html: mailLayout('NEOTREE CE DIGEST', `
+                <p><b>SERVER</b>: ${esc(server)}</p>
+                <p><b>COUNTRY</b>: ${esc(countries || 'UNKNOWN')}</p>
+                <p><b>SITES</b>: ${sections.length}</p>
+                <p><b>FAULTY CONDITIONS</b>: ${faulty} (${high} high impact)</p>
+                ${behind ? `<p><b>TABLETS BEHIND</b>: ${behind}</p>` : ''}
+                <p>Conditions that failed to evaluate on tablets since the last digest, by site; each site's conditions are looked up in
+                  that site's scripts. A failing condition never crashes the app: the tablet treats it as false, with the effect shown.
+                  Uploads count tablet syncs that reported it, not occurrences.</p>
+                ${behind ? `<p>Tablets behind ran conditions that their site's scripts no longer have: they were fixed, changed or removed
+                  after the tablets last downloaded. Check each one; the tablets pick up the current scripts at their next download, after
+                  the next publish or a forced sync. Current data version: ${esc((located && located.dataVersion) ?? '?')}. A tablet's data
+                  version is the newest seen in its reports, so it may already be newer.</p>` : ''}
+                ${sections.map(section).join('')}`),
+        }, (e) => {
+          if (e) return console.error('CE digest email failed', e.message)
+          // Mark exactly the rows reported; anything that arrived meanwhile waits for the next digest.
+          pool.query(
+            'UPDATE public.neotree_exception SET sent = true WHERE id = ANY($1)',
+            [sections.flatMap((s) => s.items.flatMap((item) => item.ids))],
+            (err) => err && console.error('CE digest mark-sent failed', err.message)
+          )
+        })
+      } catch (e) {
+        console.error('CE digest failed', e.message)
+      }
+    }
+  )
 }
 
 const crypto = require('crypto');
@@ -476,5 +686,6 @@ module.exports = (app, config = {}) => ({
   saveException: saveException(app, config),
   removeConfidentialData: removeConfidentialData(app, config),
   _removeConfidentialData: _removeConfidentialData(app, config),
-  sendEmails
+  sendEmails,
+  sendCeDigest
 });

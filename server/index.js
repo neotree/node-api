@@ -995,10 +995,18 @@ app = webAppMiddleware(app);
 httpServer.listen(process.env.SERVER_PORT, (e) => {
   if(e){
   console.log('Failed to start server', e)
-    db.createExceptionTable();  } else{
+  } else{
+    db.createExceptionTable();
 
     cron.schedule('13 * * * *', () => {
         db.sendEmails();
+      }, {
+      scheduled: true,
+      timezone: "Africa/Harare"
+    });
+
+    cron.schedule('0 8 * * *', () => {
+        db.sendCeDigest();
       }, {
       scheduled: true,
       timezone: "Africa/Harare"
