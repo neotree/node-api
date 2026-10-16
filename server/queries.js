@@ -483,139 +483,160 @@ const CE_DIGEST_MAX_ROWS = 50000
 // that may still be broken is hidden.
 const isGone = (item) => item.resolved && item.authored && !item.total
 
+// The exception columns the digest reads.
+const CE_DIGEST_COLUMNS = 'id, message, stack, device_id, device_hash, hospital, editor_version, country'
+
 // One email a day, one section per reporting site: a site's tablets sync only that site's scripts,
 // so each site's CEs are looked up in its own scripts. Each faulty CE is listed once per site with
 // where it is, what its failure does and how to fix it. A CE the site's scripts no longer have was
 // fixed, changed or removed after the reporting tablets last downloaded; those tablets are listed
 // with the CEs instead. Hermes offsets ("1:93:") in the error vary with the substituted values, and
 // any double-quoted text in it is a substituted value, so both are stripped.
-const sendCeDigest = () => {
-  pool.query(
-    'SELECT id, message, stack, device_id, device_hash, hospital, editor_version, country FROM public.neotree_exception WHERE sent is false AND message LIKE ANY($1) ORDER BY id LIMIT $2',
-    [CE_LIKE, CE_DIGEST_MAX_ROWS],
-    async (error, results) => {
-      if (error) return console.error('CE digest query failed', error.message)
-      if (!results.rows.length) return
-      try {
-        const sites = new Map() // site id ('' when not reported) -> Map(CE -> fault)
-        const versions = new Map() // device -> newest data version in its reports
-        for (const row of results.rows) {
-          const fingerprint = ceFingerprint(row.stack)
-          const error = row.message.replace(/\] \d+:\d+:/, '] ').replace(/"(?:[^"\\]|\\.)*"/g, '"[redacted]"')
-          row.key = fingerprint ? fingerprint.ce : error
-          row.site = row.hospital || ''
-          if (!sites.has(row.site)) sites.set(row.site, new Map())
-          const faults = sites.get(row.site)
-          if (!faults.has(row.key)) faults.set(row.key, { ...fingerprint, error, devices: new Set(), ids: [] })
-          const fault = faults.get(row.key)
-          fault.devices.add(row.device_id)
-          fault.ids.push(row.id)
-          versions.set(row.device_id, Math.max(versions.get(row.device_id) || 0, Number(row.editor_version) || 0))
-        }
+//
+// Builds the digest email for these exception rows: its subject, HTML, the ids of the rows it
+// reports and whether the editor lookup worked; null when there are no rows. An optional note is
+// shown at the top. Shared by the daily send and the read-only preview (scripts/preview-ce-digest.js).
+const buildCeDigest = async (rows, { note } = {}) => {
+  if (!rows.length) return null
+  const sites = new Map() // site id ('' when not reported) -> { faults: Map(CE -> fault), reports: [{ row, key }] }
+  const versions = new Map() // device -> newest data version in its reports
+  for (const row of rows) {
+    const fingerprint = ceFingerprint(row.stack)
+    const error = row.message.replace(/\] \d+:\d+:/, '] ').replace(/"(?:[^"\\]|\\.)*"/g, '"[redacted]"')
+    const key = fingerprint ? fingerprint.ce : error
+    const site = row.hospital || ''
+    if (!sites.has(site)) sites.set(site, { faults: new Map(), reports: [] })
+    const { faults, reports } = sites.get(site)
+    reports.push({ row, key })
+    if (!faults.has(key)) faults.set(key, { ...fingerprint, error, devices: new Set(), ids: [] })
+    const fault = faults.get(key)
+    fault.devices.add(row.device_id)
+    fault.ids.push(row.id)
+    versions.set(row.device_id, Math.max(versions.get(row.device_id) || 0, Number(row.editor_version) || 0))
+  }
 
-        const located = await locateCes([...sites].map(([site, faults]) => ({
-          site: site || null,
-          expressions: [...faults.values()].filter((f) => f.ce).map((f) => f.ce),
-        })))
+  const located = await locateCes([...sites].map(([site, { faults }]) => ({
+    site: site || null,
+    expressions: [...faults.values()].filter((f) => f.ce).map((f) => f.ce),
+  })))
 
-        const sections = [...sites].map(([site, faults]) => {
-          const answer = located && located.sites[site]
-          const items = [...faults.values()].map((fault) => {
-            const entry = answer && fault.ce && answer.locations[fault.ce]
-            const { matches = [], total = matches.length, elsewhere = 0, fix } = entry || {}
-            const rank = Math.min(IMPACTS.length, ...matches.map((m) => IMPACTS.indexOf(m.impact)).filter((i) => i >= 0))
-            return { ...fault, matches, total, elsewhere, fix, rank, resolved: Boolean(entry) }
-          }).sort((a, b) => a.rank - b.rank || b.devices.size - a.devices.size || b.ids.length - a.ids.length)
-          const toFix = items.filter((item) => !isGone(item))
-          const goneKeys = new Set(items.filter(isGone).map((item) => item.ce))
-          const behind = new Map()
-          for (const row of results.rows) {
-            if (row.site !== site || !goneKeys.has(row.key)) continue
-            if (!behind.has(row.device_id)) behind.set(row.device_id, { tablet: row.device_hash || row.device_id, version: versions.get(row.device_id), ces: new Set(), uploads: 0 })
-            const tablet = behind.get(row.device_id)
-            tablet.ces.add(row.key)
-            tablet.uploads++
-          }
-          const name = (answer && answer.name) || site || 'Site not reported'
-          return { name, scoped: Boolean(answer && answer.scoped), items, toFix, behind, high: toFix.filter((item) => item.rank === 0).length }
-        }).sort((a, b) => b.high - a.high || b.toFix.length - a.toFix.length || a.name.localeCompare(b.name))
-
-        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
-        const where = (item) => {
-          if (item.matches.length) {
-            const shown = item.matches.slice(0, 5).map((m) => `<a href="${esc(m.href)}">${esc(m.script)} › ${esc(m.where)}</a><br><i>${esc(m.consequence)}</i>`)
-            if (item.total > shown.length) shown.push(`…and ${item.total - shown.length} more`)
-            if (item.elsewhere) shown.push(`Also in ${item.elsewhere} place(s) in other sites' scripts`)
-            return shown.join('<br>')
-          }
-          if (!item.ce) return 'Condition not reported by the app'
-          if (!item.resolved) return 'Location unavailable: web editor lookup not configured or failed'
-          if (item.ce === '()') return 'An empty condition (the app does not say where)'
-          return 'A field, option or search-field condition (the app does not say which)'
-        }
-        // Same look as the exception email: its layout, label lines and header colour.
-        const table = 'width="100%" border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse"'
-        const headRow = 'bgcolor="#1a313d" style="color:#fff;text-align:left"'
-        const faultRows = (s) => s.toFix.map((item) => `<tr valign="top">
-          <td><b>${(IMPACTS[item.rank] || '—').toUpperCase()}</b></td>
-          <td>${where(item)}</td>
-          <td><code style="white-space:pre-wrap">${esc(item.ce || '')}</code><br>${esc(item.error)}${item.fix ? `<br><b>Fix:</b> ${esc(item.fix)}` : ''}</td>
-          <td>${item.devices.size} device(s), ${item.ids.length} upload(s)</td>
-        </tr>`).join('')
-        const tabletRows = (s) => [...s.behind.values()].sort((a, b) => b.ces.size - a.ces.size).map((t) => {
-          const ces = [...t.ces]
-          const listed = ces.slice(0, 5).map((ce) => `<code style="white-space:pre-wrap">${esc(ce)}</code>`)
-          if (ces.length > 5) listed.push(`…and ${ces.length - 5} more`)
-          return `<tr valign="top">
-          <td>${esc(t.tablet)}</td><td>${t.version || '?'}</td><td>${listed.join('<br>')}<br>${ces.length} condition(s), ${t.uploads} upload(s)</td>
-        </tr>`
-        }).join('')
-        const section = (s) => `
-                <p style="background-color:#1a313d;color:#fff;padding:8px 12px"><b>SITE</b>: ${esc(s.name)}</p>
-                <p><b>FAULTY CONDITIONS</b>: ${s.toFix.length} (${s.high} high impact)${s.behind.size ? `&nbsp;&nbsp; <b>TABLETS BEHIND</b>: ${s.behind.size}` : ''}</p>
-                ${located && !s.scoped ? '<p><i>The web editor does not know this site, so all scripts were searched.</i></p>' : ''}
-                ${s.toFix.length ? `<table ${table}><tr ${headRow}><th>Impact</th><th>Where</th><th>Condition</th><th>Seen</th></tr>${faultRows(s)}</table>` : ''}
-                ${s.behind.size ? `<p><b>TABLETS RUNNING CONDITIONS NO LONGER IN THIS SITE'S SCRIPTS</b></p>
-                <table ${table}><tr ${headRow}><th>Tablet</th><th>Data version</th><th>Conditions no longer in the site's scripts</th></tr>${tabletRows(s)}</table>` : ''}`
-
-        const server = process.env.NEOTREE_SERVER_TYPE || 'unknown'
-        const countries = [...new Set(results.rows.map((row) => row.country).filter(Boolean))]
-          .map((c) => ({ zw: 'ZIMBABWE', mw: 'MALAWI' }[c] || c.toUpperCase())).join(', ')
-        const faulty = sections.reduce((n, s) => n + s.toFix.length, 0)
-        const high = sections.reduce((n, s) => n + s.high, 0)
-        const behind = sections.reduce((n, s) => n + s.behind.size, 0)
-
-        sendEmail.raw({
-          to: process.env.CE_DIGEST_RECEIVERS || process.env.MAIL_RECEIVERS,
-          subject: `NEOTREE CE DIGEST (${server}): ${faulty} faulty condition(s), ${high} high impact, ${sections.length} site(s)${behind ? `, ${behind} tablet(s) behind` : ''}`,
-          html: mailLayout('NEOTREE CE DIGEST', `
-                <p><b>SERVER</b>: ${esc(server)}</p>
-                <p><b>COUNTRY</b>: ${esc(countries || 'UNKNOWN')}</p>
-                <p><b>SITES</b>: ${sections.length}</p>
-                <p><b>FAULTY CONDITIONS</b>: ${faulty} (${high} high impact)</p>
-                ${behind ? `<p><b>TABLETS BEHIND</b>: ${behind}</p>` : ''}
-                <p>Conditions that failed to evaluate on tablets since the last digest, by site; each site's conditions are looked up in
-                  that site's scripts. A failing condition never crashes the app: the tablet treats it as false, with the effect shown.
-                  Uploads count tablet syncs that reported it, not occurrences.</p>
-                ${behind ? `<p>Tablets behind ran conditions that their site's scripts no longer have: they were fixed, changed or removed
-                  after the tablets last downloaded. Check each one; the tablets pick up the current scripts at their next download, after
-                  the next publish or a forced sync. Current data version: ${esc((located && located.dataVersion) ?? '?')}. A tablet's data
-                  version is the newest seen in its reports, so it may already be newer.</p>` : ''}
-                ${sections.map(section).join('')}`),
-        }, (e) => {
-          if (e) return console.error('CE digest email failed', e.message)
-          // Mark exactly the rows reported; anything that arrived meanwhile waits for the next digest.
-          pool.query(
-            'UPDATE public.neotree_exception SET sent = true WHERE id = ANY($1)',
-            [sections.flatMap((s) => s.items.flatMap((item) => item.ids))],
-            (err) => err && console.error('CE digest mark-sent failed', err.message)
-          )
-        })
-      } catch (e) {
-        console.error('CE digest failed', e.message)
-      }
+  const sections = [...sites].map(([site, { faults, reports }]) => {
+    const answer = located && located.sites[site]
+    const items = [...faults.values()].map((fault) => {
+      const entry = answer && fault.ce && answer.locations[fault.ce]
+      const { matches = [], total = matches.length, elsewhere = 0, fix } = entry || {}
+      const rank = Math.min(IMPACTS.length, ...matches.map((m) => IMPACTS.indexOf(m.impact)).filter((i) => i >= 0))
+      return { ...fault, matches, total, elsewhere, fix, rank, resolved: Boolean(entry) }
+    }).sort((a, b) => a.rank - b.rank || b.devices.size - a.devices.size || b.ids.length - a.ids.length)
+    const toFix = items.filter((item) => !isGone(item))
+    const goneKeys = new Set(items.filter(isGone).map((item) => item.ce))
+    const behind = new Map()
+    for (const { row, key } of reports) {
+      if (!goneKeys.has(key)) continue
+      if (!behind.has(row.device_id)) behind.set(row.device_id, { tablet: row.device_hash || row.device_id, version: versions.get(row.device_id), ces: new Set(), uploads: 0 })
+      const tablet = behind.get(row.device_id)
+      tablet.ces.add(key)
+      tablet.uploads++
     }
-  )
+    const name = (answer && answer.name) || site || 'Site not reported'
+    return { name, scoped: Boolean(answer && answer.scoped), items, toFix, behind, high: toFix.filter((item) => item.rank === 0).length }
+  }).sort((a, b) => b.high - a.high || b.toFix.length - a.toFix.length || a.name.localeCompare(b.name))
+
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+  const where = (item) => {
+    if (item.matches.length) {
+      const shown = item.matches.slice(0, 5).map((m) => `<a href="${esc(m.href)}">${esc(m.script)} › ${esc(m.where)}</a><br><i>${esc(m.consequence)}</i>`)
+      if (item.total > shown.length) shown.push(`…and ${item.total - shown.length} more`)
+      if (item.elsewhere) shown.push(`Also in ${item.elsewhere} place(s) in other sites' scripts`)
+      return shown.join('<br>')
+    }
+    if (!item.ce) return 'Condition not reported by the app'
+    if (!item.resolved) return 'Location unavailable: web editor lookup not configured or failed'
+    if (item.ce === '()') return 'An empty condition (the app does not say where)'
+    return 'A field, option or search-field condition (the app does not say which)'
+  }
+  // Same look as the exception email: its layout, label lines and header colour.
+  const table = 'width="100%" border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse"'
+  const headRow = 'bgcolor="#1a313d" style="color:#fff;text-align:left"'
+  const faultRows = (s) => s.toFix.map((item) => `<tr valign="top">
+    <td><b>${(IMPACTS[item.rank] || '—').toUpperCase()}</b></td>
+    <td>${where(item)}</td>
+    <td><code style="white-space:pre-wrap">${esc(item.ce || '')}</code><br>${esc(item.error)}${item.fix ? `<br><b>Fix:</b> ${esc(item.fix)}` : ''}</td>
+    <td>${item.devices.size} device(s), ${item.ids.length} upload(s)</td>
+  </tr>`).join('')
+  const tabletRows = (s) => [...s.behind.values()].sort((a, b) => b.ces.size - a.ces.size).map((t) => {
+    const ces = [...t.ces]
+    const listed = ces.slice(0, 5).map((ce) => `<code style="white-space:pre-wrap">${esc(ce)}</code>`)
+    if (ces.length > 5) listed.push(`…and ${ces.length - 5} more`)
+    return `<tr valign="top">
+    <td>${esc(t.tablet)}</td><td>${t.version || '?'}</td><td>${listed.join('<br>')}<br>${ces.length} condition(s), ${t.uploads} upload(s)</td>
+  </tr>`
+  }).join('')
+  const section = (s) => `
+          <p style="background-color:#1a313d;color:#fff;padding:8px 12px"><b>SITE</b>: ${esc(s.name)}</p>
+          <p><b>FAULTY CONDITIONS</b>: ${s.toFix.length} (${s.high} high impact)${s.behind.size ? `&nbsp;&nbsp; <b>TABLETS BEHIND</b>: ${s.behind.size}` : ''}</p>
+          ${located && !s.scoped ? '<p><i>The web editor does not know this site, so all scripts were searched.</i></p>' : ''}
+          ${s.toFix.length ? `<table ${table}><tr ${headRow}><th>Impact</th><th>Where</th><th>Condition</th><th>Seen</th></tr>${faultRows(s)}</table>` : ''}
+          ${s.behind.size ? `<p><b>TABLETS RUNNING CONDITIONS NO LONGER IN THIS SITE'S SCRIPTS</b></p>
+          <table ${table}><tr ${headRow}><th>Tablet</th><th>Data version</th><th>Conditions no longer in the site's scripts</th></tr>${tabletRows(s)}</table>` : ''}`
+
+  const server = process.env.NEOTREE_SERVER_TYPE || 'unknown'
+  const countries = [...new Set(rows.map((row) => row.country).filter(Boolean))]
+    .map((c) => ({ zw: 'ZIMBABWE', mw: 'MALAWI' }[c] || c.toUpperCase())).join(', ')
+  const faulty = sections.reduce((n, s) => n + s.toFix.length, 0)
+  const high = sections.reduce((n, s) => n + s.high, 0)
+  const behind = sections.reduce((n, s) => n + s.behind.size, 0)
+
+  return {
+    subject: `NEOTREE CE DIGEST (${server}): ${faulty} faulty condition(s), ${high} high impact, ${sections.length} site(s)${behind ? `, ${behind} tablet(s) behind` : ''}`,
+    html: mailLayout('NEOTREE CE DIGEST', `${note ? `
+          <p><b>NOTE</b>: ${esc(note)}</p>` : ''}
+          <p><b>SERVER</b>: ${esc(server)}</p>
+          <p><b>COUNTRY</b>: ${esc(countries || 'UNKNOWN')}</p>
+          <p><b>SITES</b>: ${sections.length}</p>
+          <p><b>FAULTY CONDITIONS</b>: ${faulty} (${high} high impact)</p>
+          ${behind ? `<p><b>TABLETS BEHIND</b>: ${behind}</p>` : ''}
+          <p>Conditions that failed to evaluate on tablets since the last digest, by site; each site's conditions are looked up in
+            that site's scripts. A failing condition never crashes the app: the tablet treats it as false, with the effect shown.
+            Uploads count tablet syncs that reported it, not occurrences.</p>
+          ${behind ? `<p>Tablets behind ran conditions that their site's scripts no longer have: they were fixed, changed or removed
+            after the tablets last downloaded. Check each one; the tablets pick up the current scripts at their next download, after
+            the next publish or a forced sync. Current data version: ${esc((located && located.dataVersion) ?? '?')}. A tablet's data
+            version is the newest seen in its reports, so it may already be newer.</p>` : ''}
+          ${sections.map(section).join('')}`),
+    ids: sections.flatMap((s) => s.items.flatMap((item) => item.ids)),
+    located: Boolean(located),
+  }
+}
+
+// The rows the next digest reports: unsent CE failures, oldest first, up to CE_DIGEST_MAX_ROWS.
+const loadCeDigestRows = async () => (await pool.query(
+  `SELECT ${CE_DIGEST_COLUMNS} FROM public.neotree_exception WHERE sent is false AND message LIKE ANY($1) ORDER BY id LIMIT $2`,
+  [CE_LIKE, CE_DIGEST_MAX_ROWS],
+)).rows
+
+// The latest `limit` CE failures, sent or not, in the order the digest reads rows (oldest first).
+const loadRecentCeRows = async (limit) => (await pool.query(
+  `SELECT ${CE_DIGEST_COLUMNS} FROM public.neotree_exception WHERE message LIKE ANY($1) ORDER BY id DESC LIMIT $2`,
+  [CE_LIKE, limit],
+)).rows.reverse()
+
+const sendCeDigest = async () => {
+  try {
+    const digest = await buildCeDigest(await loadCeDigestRows())
+    if (!digest) return
+    sendEmail.raw({ to: process.env.CE_DIGEST_RECEIVERS || process.env.MAIL_RECEIVERS, subject: digest.subject, html: digest.html }, (e) => {
+      if (e) return console.error('CE digest email failed', e.message)
+      // Mark exactly the rows reported; anything that arrived meanwhile waits for the next digest.
+      pool.query(
+        'UPDATE public.neotree_exception SET sent = true WHERE id = ANY($1)',
+        [digest.ids],
+        (err) => err && console.error('CE digest mark-sent failed', err.message)
+      )
+    })
+  } catch (e) {
+    console.error('CE digest failed', e.message)
+  }
 }
 
 const crypto = require('crypto');
@@ -687,5 +708,8 @@ module.exports = (app, config = {}) => ({
   removeConfidentialData: removeConfidentialData(app, config),
   _removeConfidentialData: _removeConfidentialData(app, config),
   sendEmails,
-  sendCeDigest
+  sendCeDigest,
+  buildCeDigest,
+  loadCeDigestRows,
+  loadRecentCeRows
 });
