@@ -34,3 +34,6 @@ module.exports = function sendEmail(message,callback) {
                 });
         }
 }
+
+// Free-form email (to/subject/html) for summaries that don't fit the per-exception template.
+module.exports.raw = (options, callback) => transporter.sendMail({ ...mailOptions, ...options }, callback);

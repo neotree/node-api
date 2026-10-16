@@ -1,6 +1,4 @@
-const HTML_TEMPLATE = (message) => {
-  let country = message.country=='zw'?"ZIMBABWE":"MALAWI"
-    return `
+const layout = (title, body) => `
       <!DOCTYPE html>
       <html>
         <head>
@@ -40,19 +38,10 @@ const HTML_TEMPLATE = (message) => {
           <div class="container">
             <div class="email">
               <div class="email-header">
-                <h1>NEOTREE MOBILE APP EXCEPTION</h1>
+                <h1>${title}</h1>
               </div>
               <div class="email-body">
-                <p><b>COUNTRY</b>: ${country}</p>
-                <p><b>DEVICE ID</b>: ${message.device_id}</p>
-				<p><b>DEVICE HASH</b>: ${message.device_hash}</p>
-				<p><b>APP VERSION</b>: ${message.version}</p>
-                <p><b>WEB EDITOR VERSION</b>: ${message.editor_version}</p>
-                <p><b>DEVICE DETAILS:</b> ${message.device_model}</p>
-                <p><b>AVAILABLE MEMORY:</b> ${message.memory}</p>
-                <p><b>BATTERY LEVEL:</b> ${message.battery}</p>
-                <p><b>MESSAGE</b>: ${message.message}</p>
-                <p><b>STACK TRACE:</b> ${message.stack}</p>
+${body}
               </div>
               <div class="email-footer">
                 <p>© 2021 Neotree - All Rights Reserved. Charity no. 1186748, Registered office address: The Broadgate Tower, Third Floor, 20 Primrose Street, London EC2A 2RS | Designed by Creative Clinic</p>
@@ -62,6 +51,20 @@ const HTML_TEMPLATE = (message) => {
         </body>
       </html>
     `;
+
+const HTML_TEMPLATE = (message) => {
+  let country = message.country=='zw'?"ZIMBABWE":"MALAWI"
+    return layout('NEOTREE MOBILE APP EXCEPTION', `                <p><b>COUNTRY</b>: ${country}</p>
+                <p><b>DEVICE ID</b>: ${message.device_id}</p>
+				<p><b>DEVICE HASH</b>: ${message.device_hash}</p>
+				<p><b>APP VERSION</b>: ${message.version}</p>
+                <p><b>WEB EDITOR VERSION</b>: ${message.editor_version}</p>
+                <p><b>DEVICE DETAILS:</b> ${message.device_model}</p>
+                <p><b>AVAILABLE MEMORY:</b> ${message.memory}</p>
+                <p><b>BATTERY LEVEL:</b> ${message.battery}</p>
+                <p><b>MESSAGE</b>: ${message.message}</p>
+                <p><b>STACK TRACE:</b> ${message.stack}</p>`);
   }
   
    module.exports = HTML_TEMPLATE;
+   module.exports.layout = layout;
