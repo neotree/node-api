@@ -26,7 +26,7 @@ function options() {
 
   const out = path.resolve(arg('out') || path.join(os.tmpdir(), `ce-digest-preview-${new Date().toISOString().replace(/[:.]/g, '-')}.html`))
   const inside = path.relative(APP_DIR, out)
-  if (!inside.startsWith('..') && !path.isAbsolute(inside)) {
+  if (!(inside === '..' || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside))) {
     throw new Error(`--out must be outside ${APP_DIR}: pm2 watches that folder and would restart the server`)
   }
   return { limit, out }
@@ -63,4 +63,4 @@ main()
     console.error('Preview failed:', e.message)
     return 1
   })
-  .then((code) => db.pool.end().catch(() => {}).then(() => process.exit(code)))
+  .then((code) => db.pool.end().catch((e) => console.error('Could not close the database connection:', e.message)).then(() => process.exit(code)))

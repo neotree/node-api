@@ -8,6 +8,7 @@ const socketIO = require('socket.io');
 const { Pool, } = require('pg');
 var cron = require('node-cron');
 const { webAppMiddleware } = require('./web-app');
+const { readLimiter, tabletLimiter } = require('./rate-limit');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
@@ -18,6 +19,7 @@ const io = socketIO(httpServer);
 app.use(require('cors')());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(readLimiter);
 
 const subscribers = {};
 io.on('connection', socket => {
@@ -242,6 +244,9 @@ app.post('*', (req, res, next) => {
     done(error);
   }
 });
+
+// After the API key check, so a request without a valid key cannot use up a tablet's allowance.
+app.use(tabletLimiter);
 
 app.get('/', (_, response) => {
   response.status(200).json({ info: 'Node.js, Express, and Postgres API' });

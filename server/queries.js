@@ -2,8 +2,16 @@ const { Pool, Client } = require('pg');
 const sendEmail = require('./mailer');
 const { layout: mailLayout } = require('./mail-template');
 const CryptoJS = require('crypto-js');
+const { logError } = require('./helper');
 
 const pool = new Pool();
+
+// Writes a failure to node-api's error log file, and to the console that pm2 keeps.
+const logFailure = (what, error) => {
+  const detail = error ? error.message || String(error) : ''
+  console.error(what, detail)
+  logError(detail ? `${what}: ${detail}` : what)
+}
 
   const keys = [
     "MotherFirstName",
@@ -315,7 +323,7 @@ const updateException = (id) => {
   const itemId = parseInt(id);
 
   pool.query('UPDATE public.neotree_exception SET sent = true where id = $1', [itemId], (error, results) => {
-    if (error) console.error('Failed to mark exception as sent', error.message);
+    if (error) logFailure('Failed to mark exception as sent', error);
   }
   );
 };
@@ -358,24 +366,53 @@ const CE_LIKE = CE_PREFIXES.map((p) => `${p}%`);
 const isCe = (message) => typeof message === 'string' && CE_PREFIXES.some((p) => message.startsWith(p));
 
 
+// JSON.parse that returns undefined for text that is not valid JSON.
+const parseJson = (text) => {
+  try {
+    return JSON.parse(text)
+  } catch (e) {
+    return undefined
+  }
+}
+
+// The app cuts a stack at 4000 characters, which can cut its diagnostic JSON. Its keys are written in
+// order (expression, compiled, ...), so a complete expression can still be recovered. compiled is
+// kept only when what is left of it could still be the expression itself (no authored source).
+const recoverCutDiagnostics = (line) => {
+  const match = /^\{"expression":("(?:[^"\\]|\\.)*"),"compiled":"((?:[^"\\]|\\.)*)/.exec(line)
+  if (!match) return undefined
+  const expression = parseJson(match[1])
+  return { expression, compiled: match[1].slice(1, -1).startsWith(match[2]) ? expression : undefined }
+}
+
+// Counted rather than logged every time: the logger empties its file at 1 MB. The stack itself is
+// never logged, because it can hold patient values.
+let unreadableStacks = 0
+
 const ceFingerprint = (stack) => {
   const text = `${stack || ''}`
-  try {
-    const stored = JSON.parse(text)
-    if (typeof stored?.ce === 'string') return stored
-  } catch (e) {}
-  try {
-    const extra = JSON.parse(text.slice(text.lastIndexOf('\n') + 1))
-    if (typeof extra.condition === 'string') return { ce: extra.condition, authored: true }
-    if (typeof extra.expression !== 'string') return null
-    if (extra.expression !== extra.compiled) return { ce: extra.expression, authored: true }
-    const shape = extra.compiled
-      .replace(/"(?:[^"\\]|\\.)*"/g, '?')
-      .replace(/\d+(?:\.\d+)?|\b(?:true|false|null)\b/g, '?')
-    return shape.includes('"') ? null : { ce: shape, authored: false }
-  } catch (e) {
+  if (!text) return null
+  // Already reduced by saveException; any other key a client sent is dropped.
+  const stored = parseJson(text)
+  if (typeof stored?.ce === 'string') return { ce: stored.ce, authored: stored.authored === true }
+  // A raw stack: its last line is the app's diagnostic JSON.
+  const line = text.slice(text.lastIndexOf('\n') + 1)
+  const extra = parseJson(line) ?? recoverCutDiagnostics(line)
+  if (!extra || typeof extra !== 'object') {
+    unreadableStacks++
+    if (/^10*$/.test(`${unreadableStacks}`)) logFailure(`CE report stacks kept without their condition because they are not readable: ${unreadableStacks} so far`)
     return null
   }
+  if (typeof extra.condition === 'string') return { ce: extra.condition, authored: true }
+  if (typeof extra.expression !== 'string') return null
+  if (extra.expression !== extra.compiled) return { ce: extra.expression, authored: true }
+  // Values go; unanswered keys stay as written ('$key'), since they are field keys, not patient values.
+  const shape = extra.compiled
+    .replace(/"(?:[^"\\]|\\.)*"/g, '?')
+    .split(/('\$[^']*')/)
+    .map((part, i) => (i % 2 ? part : part.replace(/\d+(?:\.\d+)?|\b(?:true|false|null)\b/g, '?')))
+    .join('')
+  return shape.includes('"') ? null : { ce: shape, authored: false }
 }
 
 const stackToStore = (message, stack) => {
@@ -393,7 +430,10 @@ const saveException = () => (req, res) => {
   VALUES ($1, $2, $3, $4, $5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`
   const { deviceId, deviceHash, message, device, country, stack, hospital, version, battery, device_model, memory, editor_version } = req.body
   pool.query(q, [deviceId, deviceHash, message, device, country || '', stackToStore(message, stack), hospital, false, version, battery, device_model, memory, editor_version], (error, results) => {
-    if (error) return done(error)
+    if (error) {
+      logFailure('Failed to save exception report', error)
+      return done(new Error('Could not save the exception report'))
+    }
     done(null, `Exception: ${results.rows[0].id}`);
   })
 }
@@ -423,15 +463,15 @@ const createExceptionTable = () => {
     device_model VARCHAR,
     memory VARCHAR,
     editor_version VARCHAR
-  )`, (error) => error && console.error('Failed to create exception table', error.message))
+  )`, (error) => error && logFailure('Failed to create exception table', error))
 }
 const sendEmails = () => {
   getExceptions((err, results) => {
-    if (err) return console.error('Failed to load exception email queue', err.message)
+    if (err) return logFailure('Failed to load exception email queue', err)
     if (Array.isArray(results)) {
       for (const msg of results) {
         sendEmail(msg, (e) => {
-          if (e) return console.error('Failed to send exception email', e.message)
+          if (e) return logFailure('Failed to send exception email', e)
           updateException(msg.id);
         })
       }
@@ -445,14 +485,16 @@ const locateCes = async (lookups) => {
   const { EDITOR_URL, EDITOR_API_KEY } = process.env
   if (!EDITOR_URL || !EDITOR_API_KEY || typeof fetch !== 'function') return null
   const pairs = lookups.flatMap(({ site, expressions }) => expressions.map((ce) => [site, ce]))
-  try {
-    const located = { sites: {}, dataVersion: null }
-    for (let i = 0; i === 0 || i < pairs.length; i += CE_LOOKUP_BATCH) {
-      const batch = new Map(i ? [] : lookups.map(({ site }) => [site, []]))
-      for (const [site, ce] of pairs.slice(i, i + CE_LOOKUP_BATCH)) {
-        if (!batch.has(site)) batch.set(site, [])
-        batch.get(site).push(ce)
-      }
+  const located = { sites: {}, dataVersion: null }
+  let answered = 0
+  for (let i = 0; i === 0 || i < pairs.length; i += CE_LOOKUP_BATCH) {
+    const batch = new Map(i ? [] : lookups.map(({ site }) => [site, []]))
+    for (const [site, ce] of pairs.slice(i, i + CE_LOOKUP_BATCH)) {
+      if (!batch.has(site)) batch.set(site, [])
+      batch.get(site).push(ce)
+    }
+    // A failed batch leaves only its own CEs unlocated; the others are kept.
+    try {
       const res = await fetch(`${EDITOR_URL.replace(/\/$/, '')}/api/app/ce-locations`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': EDITOR_API_KEY },
@@ -466,15 +508,18 @@ const locateCes = async (lookups) => {
         located.sites[site] = known ? { ...known, locations: { ...known.locations, ...answer.locations } } : answer
       }
       if (located.dataVersion == null) located.dataVersion = body.dataVersion ?? null
+      answered++
+    } catch (e) {
+      logFailure(`CE digest: web editor lookup failed for batch ${i / CE_LOOKUP_BATCH + 1}`, e)
     }
-    return located
-  } catch (e) {
-    console.error('CE digest: web editor lookup failed', e.message)
-    return null
   }
+  return answered ? located : null
 }
 
 const IMPACTS = ['high', 'medium', 'low']
+// Rows shown per site, so the email stays within what mail relays accept; every row is still counted and marked sent.
+const MAX_FAULTS_SHOWN = 50
+const MAX_TABLETS_SHOWN = 30
 // Bounds one run after a long outage; the rest is reported the next day.
 const CE_DIGEST_MAX_ROWS = 50000
 
@@ -558,20 +603,21 @@ const buildCeDigest = async (rows, { note } = {}) => {
   // Same look as the exception email: its layout, label lines and header colour.
   const table = 'width="100%" border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse"'
   const headRow = 'bgcolor="#1a313d" style="color:#fff;text-align:left"'
-  const faultRows = (s) => s.toFix.map((item) => `<tr valign="top">
+  const more = (n, what, columns) => (n > 0 ? `<tr><td colspan="${columns}"><i>…and ${n} more ${what} at this site, not shown</i></td></tr>` : '')
+  const faultRows = (s) => s.toFix.slice(0, MAX_FAULTS_SHOWN).map((item) => `<tr valign="top">
     <td><b>${(IMPACTS[item.rank] || '—').toUpperCase()}</b></td>
     <td>${where(item)}</td>
     <td><code style="white-space:pre-wrap">${esc(item.ce || '')}</code><br>${esc(item.error)}${item.fix ? `<br><b>Fix:</b> ${esc(item.fix)}` : ''}</td>
     <td>${item.devices.size} device(s), ${item.ids.length} upload(s)</td>
-  </tr>`).join('')
-  const tabletRows = (s) => [...s.behind.values()].sort((a, b) => b.ces.size - a.ces.size).map((t) => {
+  </tr>`).join('') + more(s.toFix.length - MAX_FAULTS_SHOWN, 'faulty condition(s)', 4)
+  const tabletRows = (s) => [...s.behind.values()].sort((a, b) => b.ces.size - a.ces.size).slice(0, MAX_TABLETS_SHOWN).map((t) => {
     const ces = [...t.ces]
     const listed = ces.slice(0, 5).map((ce) => `<code style="white-space:pre-wrap">${esc(ce)}</code>`)
     if (ces.length > 5) listed.push(`…and ${ces.length - 5} more`)
     return `<tr valign="top">
     <td>${esc(t.tablet)}</td><td>${t.version || '?'}</td><td>${listed.join('<br>')}<br>${ces.length} condition(s), ${t.uploads} upload(s)</td>
   </tr>`
-  }).join('')
+  }).join('') + more(s.behind.size - MAX_TABLETS_SHOWN, 'tablet(s)', 3)
   const section = (s) => `
           <p style="background-color:#1a313d;color:#fff;padding:8px 12px"><b>SITE</b>: ${esc(s.name)}</p>
           <p><b>FAULTY CONDITIONS</b>: ${s.toFix.length} (${s.high} high impact)${s.behind.size ? `&nbsp;&nbsp; <b>TABLETS BEHIND</b>: ${s.behind.size}` : ''}</p>
@@ -626,16 +672,16 @@ const sendCeDigest = async () => {
     const digest = await buildCeDigest(await loadCeDigestRows())
     if (!digest) return
     sendEmail.raw({ to: process.env.CE_DIGEST_RECEIVERS || process.env.MAIL_RECEIVERS, subject: digest.subject, html: digest.html }, (e) => {
-      if (e) return console.error('CE digest email failed', e.message)
+      if (e) return logFailure('CE digest email failed', e)
       // Mark exactly the rows reported; anything that arrived meanwhile waits for the next digest.
       pool.query(
         'UPDATE public.neotree_exception SET sent = true WHERE id = ANY($1)',
         [digest.ids],
-        (err) => err && console.error('CE digest mark-sent failed', err.message)
+        (err) => err && logFailure('CE digest mark-sent failed', err)
       )
     })
   } catch (e) {
-    console.error('CE digest failed', e.message)
+    logFailure('CE digest failed', e)
   }
 }
 
