@@ -364,6 +364,7 @@ const getLastIngestedSessions = () => (req, res) => {
 const CE_PREFIXES = ['[Conditional expression failed to evaluate]', '[EligibilityCriteria.evaluateCondition]'];
 const CE_LIKE = CE_PREFIXES.map((p) => `${p}%`);
 const isCe = (message) => typeof message === 'string' && CE_PREFIXES.some((p) => message.startsWith(p));
+const QUOTED_TEXT = /"(?:[^"\\]|\\[\s\S])*(?:"|\\?$)/g;
 
 
 // JSON.parse that returns undefined for text that is not valid JSON.
@@ -389,9 +390,7 @@ const recoverCutDiagnostics = (line) => {
 // never logged, because it can hold patient values.
 let unreadableStacks = 0
 
-// A multi-select answer is a list as long as the options ticked, so one condition would make a shape
-// per length; every list counts as one.
-const collapseLists = (shape) => shape.replace(/\[\s*(?:\?(?:\s*,\s*\?)*)?\s*\]/g, '[?]')
+const collapseLists = (shape) => shape.replace(/\[\s*(?:\?\s*(?:,\s*\?\s*)*)?\]/g, '[?]')
 
 const ceFingerprint = (stack) => {
   const text = `${stack || ''}`
@@ -414,11 +413,11 @@ const ceFingerprint = (stack) => {
   if (extra.expression !== extra.compiled) return { ce: extra.expression, authored: true }
   // Values go; unanswered keys stay as written ('$key'), since they are field keys, not patient values.
   const shape = extra.compiled
-    .replace(/"(?:[^"\\]|\\.)*"/g, '?')
+    .replace(QUOTED_TEXT, '?')
     .split(/('\$[^']*')/)
     .map((part, i) => (i % 2 ? part : part.replace(/\d+(?:\.\d+)?|\b(?:true|false|null)\b/g, '?')))
     .join('')
-  return shape.includes('"') ? null : { ce: collapseLists(shape), authored: false }
+  return { ce: collapseLists(shape), authored: false }
 }
 
 const stackToStore = (message, stack) => {
@@ -569,7 +568,7 @@ const buildCeDigest = async (rows, { note } = {}) => {
   const versions = new Map() // device -> newest data version in its reports
   for (const row of rows) {
     const fingerprint = ceFingerprint(row.stack)
-    const error = row.message.replace(/\] \d+:\d+:/, '] ').replace(/"(?:[^"\\]|\\.)*"/g, '"[redacted]"')
+    const error = row.message.replace(/\] \d+:\d+:/, '] ').replace(QUOTED_TEXT, '"[redacted]"')
     const key = fingerprint ? fingerprint.ce : error
     const site = row.hospital || ''
     if (!sites.has(site)) sites.set(site, { faults: new Map(), reports: [] })
