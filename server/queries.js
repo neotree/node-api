@@ -389,12 +389,18 @@ const recoverCutDiagnostics = (line) => {
 // never logged, because it can hold patient values.
 let unreadableStacks = 0
 
+// A multi-select answer is a list as long as the options ticked, so one condition would make a shape
+// per length; every list counts as one.
+const collapseLists = (shape) => shape.replace(/\[\s*(?:\?(?:\s*,\s*\?)*)?\s*\]/g, '[?]')
+
 const ceFingerprint = (stack) => {
   const text = `${stack || ''}`
   if (!text) return null
   // Already reduced by saveException; any other key a client sent is dropped.
   const stored = parseJson(text)
-  if (typeof stored?.ce === 'string') return { ce: stored.ce, authored: stored.authored === true }
+  if (typeof stored?.ce === 'string') {
+    return stored.authored === true ? { ce: stored.ce, authored: true } : { ce: collapseLists(stored.ce), authored: false }
+  }
   // A raw stack: its last line is the app's diagnostic JSON.
   const line = text.slice(text.lastIndexOf('\n') + 1)
   const extra = parseJson(line) ?? recoverCutDiagnostics(line)
@@ -412,7 +418,7 @@ const ceFingerprint = (stack) => {
     .split(/('\$[^']*')/)
     .map((part, i) => (i % 2 ? part : part.replace(/\d+(?:\.\d+)?|\b(?:true|false|null)\b/g, '?')))
     .join('')
-  return shape.includes('"') ? null : { ce: shape, authored: false }
+  return shape.includes('"') ? null : { ce: collapseLists(shape), authored: false }
 }
 
 const stackToStore = (message, stack) => {
@@ -437,12 +443,27 @@ const saveException = () => (req, res) => {
     done(null, `Exception: ${results.rows[0].id}`);
   })
 }
-const getExceptions = (callback) => {
+// A tablet sends an error again each time its count goes up, and every send is stored as a new row.
+// Only the first per tablet, error and app version is emailed, so a new app version that still has
+// the error is reported once more. Repeats stay in the table, marked sent. The concatenation is
+// what the neotree_exception_repeat index holds (manual_migrations), so the lookup reads only this
+// tablet's rows for this error; without the index it is correct, only slower.
+const MARK_REPEATS_SENT = `UPDATE public.neotree_exception e SET sent = true
+  WHERE e.sent IS FALSE AND e.message NOT LIKE ALL($1) AND EXISTS (
+    SELECT 1 FROM public.neotree_exception s
+    WHERE (s.device_id || s.message) = (e.device_id || e.message)
+      AND s.sent AND s.device_id = e.device_id AND s.message = e.message AND s.version IS NOT DISTINCT FROM e.version)`
 
-  pool.query('SELECT id, country, device_id, device_hash, message,stack,version,battery,device_model,memory,editor_version FROM public.neotree_exception WHERE sent is false AND message NOT LIKE ALL($1)', [CE_LIKE], (error, results) => {
+const getExceptions = (callback) => {
+  pool.query(MARK_REPEATS_SENT, [CE_LIKE], (error) => {
     if (error) return callback(error, null)
-    const jsonObject = JSON.stringify(results.rows)
-    callback(null, JSON.parse(jsonObject));
+    // Repeats that arrived together: the oldest is emailed, the rest are marked sent by the next run.
+    pool.query(`SELECT DISTINCT ON (device_id, message, version) id, country, device_id, device_hash, message, stack, version, battery, device_model, memory, editor_version
+      FROM public.neotree_exception WHERE sent IS FALSE AND message NOT LIKE ALL($1) ORDER BY device_id, message, version, id`, [CE_LIKE], (error, results) => {
+      if (error) return callback(error, null)
+      const jsonObject = JSON.stringify(results.rows)
+      callback(null, JSON.parse(jsonObject));
+    });
   });
 };
 
@@ -523,10 +544,11 @@ const MAX_TABLETS_SHOWN = 30
 // Bounds one run after a long outage; the rest is reported the next day.
 const CE_DIGEST_MAX_ROWS = 50000
 
-// Only a CE as authored that the editor searched for in the site's scripts and did not find counts
-// as gone. A value-stripped shape, "()" or a CE missing from the answer stays a fault, so nothing
-// that may still be broken is hidden.
-const isGone = (item) => item.resolved && item.authored && !item.total
+// Only a CE the editor searched for in the site's scripts and did not find counts as gone: one as
+// authored, or "()", which the app sends only for a diagnosis or problem with symptoms but no
+// expression, and the editor looks for exactly that. A value-stripped shape or a CE missing from
+// the answer stays a fault, so nothing that may still be broken is hidden.
+const isGone = (item) => item.resolved && (item.authored || item.ce === '()') && !item.total
 
 // The exception columns the digest reads.
 const CE_DIGEST_COLUMNS = 'id, message, stack, device_id, device_hash, hospital, editor_version, country'
@@ -627,14 +649,15 @@ const buildCeDigest = async (rows, { note } = {}) => {
           <table ${table}><tr ${headRow}><th>Tablet</th><th>Data version</th><th>Conditions no longer in the site's scripts</th></tr>${tabletRows(s)}</table>` : ''}`
 
   const server = process.env.NEOTREE_SERVER_TYPE || 'unknown'
-  const countries = [...new Set(rows.map((row) => row.country).filter(Boolean))]
-    .map((c) => ({ zw: 'ZIMBABWE', mw: 'MALAWI' }[c] || c.toUpperCase())).join(', ')
+  const countries = [...new Set(rows.map((row) => row.country).filter(Boolean)
+    .map((c) => ({ zw: 'ZIMBABWE', mw: 'MALAWI', mwi: 'MALAWI' }[c] || c.toUpperCase())))].join(', ')
   const faulty = sections.reduce((n, s) => n + s.toFix.length, 0)
   const high = sections.reduce((n, s) => n + s.high, 0)
   const behind = sections.reduce((n, s) => n + s.behind.size, 0)
 
   return {
-    subject: `NEOTREE CE DIGEST (${server}): ${faulty} faulty condition(s), ${high} high impact, ${sections.length} site(s)${behind ? `, ${behind} tablet(s) behind` : ''}`,
+    // Server type and country tell apart digests from servers that share a type (demo runs as production).
+    subject: `NEOTREE CE DIGEST (${server}, ${countries || 'UNKNOWN'}): ${faulty} faulty condition(s), ${high} high impact, ${sections.length} site(s)${behind ? `, ${behind} tablet(s) behind` : ''}`,
     html: mailLayout('NEOTREE CE DIGEST', `${note ? `
           <p><b>NOTE</b>: ${esc(note)}</p>` : ''}
           <p><b>SERVER</b>: ${esc(server)}</p>
@@ -671,13 +694,17 @@ const sendCeDigest = async () => {
   try {
     const digest = await buildCeDigest(await loadCeDigestRows())
     if (!digest) return
+    // Exactly the rows reported are marked, and before sending: if marking failed after the email
+    // went out, the next day's digest would repeat it. Anything that arrived meanwhile waits for the
+    // next digest.
+    await pool.query('UPDATE public.neotree_exception SET sent = true WHERE id = ANY($1)', [digest.ids])
     sendEmail.raw({ to: process.env.CE_DIGEST_RECEIVERS || process.env.MAIL_RECEIVERS, subject: digest.subject, html: digest.html }, (e) => {
-      if (e) return logFailure('CE digest email failed', e)
-      // Mark exactly the rows reported; anything that arrived meanwhile waits for the next digest.
+      if (!e) return
+      logFailure('CE digest email failed', e)
       pool.query(
-        'UPDATE public.neotree_exception SET sent = true WHERE id = ANY($1)',
+        'UPDATE public.neotree_exception SET sent = false WHERE id = ANY($1)',
         [digest.ids],
-        (err) => err && logFailure('CE digest mark-sent failed', err)
+        (err) => err && logFailure('CE digest: could not put the unsent rows back for the next digest', err)
       )
     })
   } catch (e) {
