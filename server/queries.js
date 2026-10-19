@@ -386,7 +386,7 @@ const recoverCutDiagnostics = (line) => {
 }
 
 // Counted rather than logged every time: the logger empties its file at 1 MB. The stack itself is
-// never logged, because it can hold patient values. 
+// never logged, because it can hold patient values.
 let unreadableStacks = 0
 
 // A multi-select answer is a list as long as the options ticked, so one condition would make a shape
