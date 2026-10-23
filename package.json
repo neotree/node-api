@@ -7,6 +7,7 @@
     "cross-env": "./node_modules/.bin/cross-env"
   },
   "scripts": {
+    "lint": "node scripts/lint.js",
     "start": "nodemon index.js",
     "start:prod-server": "cross-env NEOTREE_SERVER_TYPE=production node index.js",
     "start:stage-server": "cross-env NEOTREE_SERVER_TYPE=stage node index.js",
