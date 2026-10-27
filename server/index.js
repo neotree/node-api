@@ -3,11 +3,9 @@ const crypto = require('crypto');
 const {logError, logInfo, serializeError} = require('./helper')
 const http = require('http');
 const express = require('express');
-const bodyParser = require('body-parser');
 const socketIO = require('socket.io');
 const { Pool, } = require('pg');
 var cron = require('node-cron');
-const { webAppMiddleware } = require('./web-app');
 const { readLimiter, tabletLimiter } = require('./rate-limit');
 const fs = require('fs');
 const path = require('path');
@@ -17,8 +15,8 @@ const httpServer = http.createServer(app);
 const io = socketIO(httpServer);
 
 app.use(require('cors')());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(readLimiter);
 
 const subscribers = {};
@@ -115,7 +113,7 @@ async function getNextSequenceNumber(pool, scriptId, sessionYear) {
         `, [scriptId, sessionYear]);
 
         const nextSequence = Number(result.rows[0].last_sequence);
-        console.log(`[Sequence Lock] Generated sequence ${nextSequence} for scriptId=${scriptId}, year=${sessionYear}`);
+        logInfo(`[Sequence Lock] Generated sequence ${nextSequence} for scriptId=${scriptId}, year=${sessionYear}`);
         return nextSequence;
     } catch (error) {
         console.error('Error getting next sequence number:', error.message);
@@ -178,9 +176,12 @@ app.get('/update-sessions-key', (req, res) => {
   updateKey();
 });
 
+// Names a key in the logs without revealing it: the first 8 hex characters of its SHA-256.
+const keyFingerprint = key => crypto.createHash('sha256').update(String(key)).digest('hex').slice(0, 8);
+
 app.post('*', (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
-  logInfo(`[API Key Check] Received POST to: ${req.originalUrl} with API key: ${apiKey || 'NO KEY PROVIDED'}`);
+  logInfo(`[API Key Check] Received POST to: ${req.originalUrl} with ${apiKey ? `key ${keyFingerprint(apiKey)}` : 'NO KEY PROVIDED'}`);
 
   const done = e => {
     if (e) {
@@ -199,8 +200,6 @@ app.post('*', (req, res, next) => {
       return done(new Error('No API key provided'));
     }
 
-    logInfo(`[API Key Lookup] Starting query for key: ${apiKey}`);
-
     // Call db.getApiKeys with the apiKey
     const promise = db.getApiKeys(apiKey);
 
@@ -211,23 +210,20 @@ app.post('*', (req, res, next) => {
 
     promise
       .then((rows) => {
-        logInfo(`[API Key Query Result] Database returned: ${JSON.stringify(rows)}`);
-
         // Handle case where rows is null or undefined
         if (!rows || !Array.isArray(rows)) {
-          logError(`[API Key Validation Error] Database query returned invalid data type: ${typeof rows}, value: ${JSON.stringify(rows)}`);
+          logError(`[API Key Validation Error] Database query returned invalid data type: ${typeof rows}`);
           return done(new Error('Invalid API key validation response'));
         }
 
-        logInfo(`[Valid Keys in DB] Found ${rows.length} key(s)`);
+        // Never log the rows or the key: they are the credentials themselves.
         const keys = rows.map(r => r.key);
-        logInfo(`[Valid Keys List] ${keys.join(', ') || 'None found'}`);
 
         if (!keys.includes(apiKey)) {
-          logError(`[API Key Validation] Unauthorised api key: ${apiKey}`);
+          logError(`[API Key Validation] Unauthorised api key ${keyFingerprint(apiKey)}`);
           return done(new Error('Unauthorised api key'));
         } else {
-          logInfo(`[API Key Validation Success] Valid API key accepted: ${apiKey}`);
+          logInfo(`[API Key Validation Success] Accepted key ${keyFingerprint(apiKey)}`);
           done();
         }
       })
@@ -236,7 +232,8 @@ app.post('*', (req, res, next) => {
         logError(`[Error Type] ${e.constructor.name}`);
         logError(`[Error Code] ${e.code}`);
         logError(`[Error Stack] ${e.stack}`);
-        done(e);
+        // The caller gets a generic message; database errors stay in the log.
+        done(new Error('API key validation service error'));
       });
   } catch (error) {
     logError(`[API Key Validation Exception] Unexpected error: ${error.message}`);
@@ -270,10 +267,8 @@ app.get('/test-mail', (_, res) => {
 		subject: 'NEOTREE Test mail',
 	};
 	transporter.sendMail({ ...mailOptions, html: '<h1>Test mail</h1>' }, function(error, info){
-		console.log({
-			error,
-			info,
-		});
+		if (error) logError('[Test mail] Sending failed', serializeError(error));
+		else logInfo(`[Test mail] Sent, message id ${info.messageId}`);
 		res.status(error?400:200).json({
 			error,
 			success: error ? false : true,
@@ -499,8 +494,14 @@ app.post('/save-poll-data', async (req, res) => {
             logInfo(`[DB Admin] Database check rows: ${dbCheckResult.rows.length}`);
 
             if (dbCheckResult.rows.length === 0) {
+                // A database name cannot be a bind parameter, so only a plain identifier is accepted, and it is
+                // quoted so it is created exactly as named (the lookup above matches it exactly too).
+                if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(dbConfig.database)) {
+                    throw new Error('IMPILO_DATABASE_NAME is not a valid database name');
+                }
+                const createDatabase = 'CREATE DATABASE "' + dbConfig.database + '"';
                 logInfo(`[DB Admin] Creating database ${dbConfig.database}`);
-                await adminPool.query(`CREATE DATABASE ${dbConfig.database}`);
+                await adminPool.query(createDatabase);
             }
         } catch (adminErr) {
             logError('[DB Admin Error]', serializeError(adminErr));
@@ -994,12 +995,9 @@ app.post('/save-poll-data', async (req, res) => {
     }
 });
 
-
-app = webAppMiddleware(app);
-
 httpServer.listen(process.env.SERVER_PORT, (e) => {
   if(e){
-  console.log('Failed to start server', e)
+  logError('Failed to start server', serializeError(e))
   } else{
     db.createExceptionTable();
 
@@ -1016,7 +1014,7 @@ httpServer.listen(process.env.SERVER_PORT, (e) => {
       scheduled: true,
       timezone: "Africa/Harare"
     });
-  console.log(`Listening on port ${process.env.SERVER_PORT}.`)
+  logInfo(`Listening on port ${process.env.SERVER_PORT}.`)
   }
 
 

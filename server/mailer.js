@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const  HTML_TEMPLATE = require("./mail-template.js");
+const { logError, serializeError } = require('./helper');
 
 const transporter = nodemailer.createTransport({
   service: process.env.MAIL_MAILER,
@@ -9,10 +10,7 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.MAIL_USERNAME,
     pass: process.env.MAIL_PASSWORD
-  },
-   tls: {
-        rejectUnauthorized: false
-    }
+  }
 });
 
 const mailOptions = {
@@ -22,11 +20,10 @@ const mailOptions = {
 };
 
 module.exports = function sendEmail(message,callback) {
-        console.log('sendEmail message = ', message);
         if(message){
                 transporter.sendMail({ ...mailOptions, html: HTML_TEMPLATE(message) }, function(error, info){
-                        console.log('transporter.sendMail', error, info);
                         if (error) {
+                                logError('[Mailer] Sending the exception email failed', serializeError(error));
                                 callback(error,null);
                         } else {
                                 callback(null,{success: true})

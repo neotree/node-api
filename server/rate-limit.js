@@ -8,8 +8,7 @@ const windowMs = envNumber('RATE_LIMIT_WINDOW_MINUTES', 5) * 60 * 1000
 // no device id, and the prefix is the tablet that admitted the baby, so several tablets can share it.
 const tabletKey = (req) => {
   const body = req.body && typeof req.body === 'object' ? req.body : {}
-  const webAppDevice = (/^\/web-app\/([^/]+)/.exec(req.path) || [])[1]
-  const device = body.deviceId || body.device || req.query.deviceId || webAppDevice
+  const device = body.deviceId || body.device || req.query.deviceId
   if (device) return `device:${device}`
   const uid = `${req.query.uid || body.uid || ''}`
   const prefix = uid.split('-')[0]
