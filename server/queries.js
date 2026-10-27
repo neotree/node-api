@@ -13,71 +13,6 @@ const logFailure = (what, error) => {
   logError(detail ? `${what}: ${detail}` : what)
 }
 
-  const keys = [
-    "MotherFirstName",
-    "MotherSurname",
-    "MothersCell",
-    "MothFirstNameDC",
-    "MothSurnameDC",
-    "Ethnicity2",
-    "HospNu",
-    "MoFirstNameBC",
-    "MoSurNameBC",
-    "DOBTOB",
-    "BirthDateDis",
-    "Toes",
-    "MothInitials",
-    "MotherDOB",
-    "BabyFirstName",
-    "BabySurname",
-    "BabyFirst",
-    "BabyLast",
-    'MotherAddressVillage',
-    'MothersCell',
-    'KinAddress',
-    'KinName'
-  ];
-
-const _removeConfidentialData = () => (req, res) => {
-
-  console.log('loading sessions...');
-  const month = req.query.month;
-  const year = req.query.year;
-  // pool.query(`select count(*) from sessions where EXTRACT(MONTH FROM ingested_at) = ${month} and EXTRACT(YEAR FROM ingested_at) = ${year}`, (error, results) => {
-  // 	res.json({ error, results });
-  // });
-  pool.query(`select id, data from sessions where EXTRACT(MONTH FROM ingested_at) = ${month} and EXTRACT(YEAR FROM ingested_at) = ${year} order by ingested_at desc;`, (error, results) => {
-    if (error) return res.json({ error });
-
-    const data = results.rows.map(item => {
-      const data = item.data;
-      const conf = Object.keys(data.entries).filter(key => keys.includes(key));
-      keys.forEach(key => {
-        delete data.entries[key];
-      });
-      return {
-        id: item.id,
-        data: JSON.stringify(data),
-        conf,
-      }
-    }).filter(item => item.conf.length);
-
-    console.log(data.length + ' sessions');
-
-    if (data.length) {
-      data.forEach((item, i) => {
-        console.log('updating session ID: ' + item.id);
-        pool.query('UPDATE public.sessions SET data = $1 WHERE id = $2', [item.data, item.id], (error, rslts) => {
-          if (i === (data.length - 1)) console.log({ success: true });
-        });
-      });
-    } else {
-      console.log({ success: true });
-      res.json({ success: true });
-    }
-  });
-};
-
 const removeConfidentialData = () => (req, res) => {
   const keys = req.body.keys || [];
   pool.query("select id, data from sessions order by ingested_at desc;", (error, results) => {
@@ -109,16 +44,20 @@ const removeConfidentialData = () => (req, res) => {
 };
 
 const countByUidPrefix = () => (req, res) => {
-  pool.query(`SELECT count(*) FROM public.sessions WHERE uid LIKE '${req.query.uid_prefix}%';`, (e, rslts) => {
-    if (e) throw e;
+  // The prefix is a bind parameter. It keeps LIKE's matching as before: `%` and `_` in it are wildcards.
+  pool.query("SELECT count(*) FROM public.sessions WHERE uid LIKE $1 || '%'", [`${req.query.uid_prefix}`], (e, rslts) => {
+    if (e) {
+      logFailure('Counting sessions by uid prefix failed', e);
+      return res.status(500).json({ error: 'Could not count sessions' });
+    }
     res.status(200).send(rslts.rows[0] ? rslts.rows[0].count : 0);
   });
 };
 
 const getApiKeys = () => keys => {
   return new Promise((resolve, reject) => {
-    keys = (keys.map ? keys : [keys]).map(k => `'${k}'`);
-    pool.query(`SELECT key FROM public."api_keys" WHERE key IN (${keys.join(',')})`, (error, results) => {
+    keys = (Array.isArray(keys) ? keys : [keys]).map(String);
+    pool.query('SELECT key FROM public."api_keys" WHERE key = ANY($1::text[])', [keys], (error, results) => {
       if (error) {
         reject(error);
       } else {
@@ -205,7 +144,6 @@ const getLocalSessionsByUID = () => (request, response) => {
     (error, results) => {
       if (error) throw error;
        const encrypted = encryptLocalData(results.rows, sec)
-       console.log(JSON.stringify(results.rows))
       response.status(200).json(JSON.stringify({ sessions:  encrypted}));
     }
   );
@@ -303,9 +241,8 @@ const saveLocalSession = (app, { socket }) => (request, response) => {
     }
   });
 }catch(ex){
-  console.warn("This is a warning",ex);
-console.error("This is an error",ex);
-console.debug("This is a debug message",ex);
+  logFailure('Saving a local session failed', ex);
+  if (!response.headersSent) response.status(502).send('Could not save the session');
 }
 };
 
@@ -549,9 +486,6 @@ const CE_DIGEST_MAX_ROWS = 50000
 // the answer stays a fault, so nothing that may still be broken is hidden.
 const isGone = (item) => item.resolved && (item.authored || item.ce === '()') && !item.total
 
-// The exception columns the digest reads.
-const CE_DIGEST_COLUMNS = 'id, message, stack, device_id, device_hash, hospital, editor_version, country'
-
 // One email a day, one section per reporting site: a site's tablets sync only that site's scripts,
 // so each site's CEs are looked up in its own scripts. Each faulty CE is listed once per site with
 // where it is, what its failure does and how to fix it. A CE the site's scripts no longer have was
@@ -679,13 +613,13 @@ const buildCeDigest = async (rows, { note } = {}) => {
 
 // The rows the next digest reports: unsent CE failures, oldest first, up to CE_DIGEST_MAX_ROWS.
 const loadCeDigestRows = async () => (await pool.query(
-  `SELECT ${CE_DIGEST_COLUMNS} FROM public.neotree_exception WHERE sent is false AND message LIKE ANY($1) ORDER BY id LIMIT $2`,
+  'SELECT id, message, stack, device_id, device_hash, hospital, editor_version, country FROM public.neotree_exception WHERE sent is false AND message LIKE ANY($1) ORDER BY id LIMIT $2',
   [CE_LIKE, CE_DIGEST_MAX_ROWS],
 )).rows
 
 // The latest `limit` CE failures, sent or not, in the order the digest reads rows (oldest first).
 const loadRecentCeRows = async (limit) => (await pool.query(
-  `SELECT ${CE_DIGEST_COLUMNS} FROM public.neotree_exception WHERE message LIKE ANY($1) ORDER BY id DESC LIMIT $2`,
+  'SELECT id, message, stack, device_id, device_hash, hospital, editor_version, country FROM public.neotree_exception WHERE message LIKE ANY($1) ORDER BY id DESC LIMIT $2',
   [CE_LIKE, limit],
 )).rows.reverse()
 
@@ -778,7 +712,6 @@ module.exports = (app, config = {}) => ({
   createExceptionTable,
   saveException: saveException(app, config),
   removeConfidentialData: removeConfidentialData(app, config),
-  _removeConfidentialData: _removeConfidentialData(app, config),
   sendEmails,
   sendCeDigest,
   buildCeDigest,
