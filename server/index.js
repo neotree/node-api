@@ -6,7 +6,7 @@ const express = require('express');
 const socketIO = require('socket.io');
 const { Pool, } = require('pg');
 var cron = require('node-cron');
-const { readLimiter, tabletLimiter } = require('./rate-limit');
+const { readLimiter, tabletLimiter, tabletKey } = require('./rate-limit');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
@@ -176,12 +176,11 @@ app.get('/update-sessions-key', (req, res) => {
   updateKey();
 });
 
-// Names a key in the logs without revealing it: the first 8 hex characters of its SHA-256.
-const keyFingerprint = key => crypto.createHash('sha256').update(String(key)).digest('hex').slice(0, 8);
-
 app.post('*', (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
-  logInfo(`[API Key Check] Received POST to: ${req.originalUrl} with ${apiKey ? `key ${keyFingerprint(apiKey)}` : 'NO KEY PROVIDED'}`);
+  // The logs name the caller (its device id, else uid prefix, else IP), never anything derived from the key.
+  const caller = tabletKey(req);
+  logInfo(`[API Key Check] Received POST to: ${req.originalUrl} from ${caller} ${apiKey ? 'with a key' : 'with NO KEY PROVIDED'}`);
 
   const done = e => {
     if (e) {
@@ -220,10 +219,10 @@ app.post('*', (req, res, next) => {
         const keys = rows.map(r => r.key);
 
         if (!keys.includes(apiKey)) {
-          logError(`[API Key Validation] Unauthorised api key ${keyFingerprint(apiKey)}`);
+          logError(`[API Key Validation] Unauthorised api key from ${caller}`);
           return done(new Error('Unauthorised api key'));
         } else {
-          logInfo(`[API Key Validation Success] Accepted key ${keyFingerprint(apiKey)}`);
+          logInfo(`[API Key Validation Success] Accepted key from ${caller}`);
           done();
         }
       })

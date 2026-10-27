@@ -35,7 +35,7 @@ jobs:
       # Hosts the install/build needs beyond the npm registry (e.g. Prisma engines,
       # Google Fonts for next/font). Keep the folded `>-`: the list must reach
       # harden-runner space-separated, and a `|` block silently allows nothing.
-      # extra-egress-endpoints: >-
-      #   binaries.prisma.sh:443
-      #   fonts.googleapis.com:443
-      #   fonts.gstatic.com:443
+      # Sigstore's TUF repository: `npm audit signatures` fetches its trust root from
+      # there to verify the provenance attestations some dependencies carry.
+      extra-egress-endpoints: >-
+        tuf-repo-cdn.sigstore.dev:443
