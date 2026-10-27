@@ -368,8 +368,10 @@ app.post('/save-poll-data', async (req, res) => {
             logInfo('[Query Parameters] EMPTY - No query parameters');
         }
 
+        // The tablet sends this route its confidential fields too (they are flagged per field in the
+        // scripts), so the body's values never go to the log; its keys are logged further down.
         if (req.body && Object.keys(req.body).length > 0) {
-            logInfo('[Request Body] ' + JSON.stringify(req.body));
+            logInfo(`[Request Body] present, ${Buffer.byteLength(JSON.stringify(req.body))} bytes`);
         } else {
             logInfo('[Request Body] EMPTY - No body data');
         }
